@@ -24,7 +24,6 @@ import (
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	fakepipelineclient "github.com/tektoncd/pipeline/pkg/client/injection/client/fake"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	logtesting "knative.dev/pkg/logging/testing"
 	rtesting "knative.dev/pkg/reconciler/testing"
 )
 
@@ -43,7 +42,7 @@ func TestBackend_StorePayload(t *testing.T) {
 				A: "foo",
 				B: 3,
 			},
-			object: objects.NewTaskRunObject(&v1beta1.TaskRun{
+			object: objects.NewTaskRunObjectV1Beta1(&v1beta1.TaskRun{ //nolint:staticcheck
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
 					Namespace: "bar",
@@ -51,7 +50,7 @@ func TestBackend_StorePayload(t *testing.T) {
 				Status: v1beta1.TaskRunStatus{
 					TaskRunStatusFields: v1beta1.TaskRunStatusFields{
 						TaskRunResults: []v1beta1.TaskRunResult{
-							{Name: "IMAGE_URL", Value: *v1beta1.NewArrayOrString("mockImage")},
+							{Name: "IMAGE_URL", Value: *v1beta1.NewStructuredValues("mockImage")},
 						},
 					},
 				},
@@ -63,7 +62,7 @@ func TestBackend_StorePayload(t *testing.T) {
 				A: "foo",
 				B: 3,
 			},
-			object: objects.NewPipelineRunObject(&v1beta1.PipelineRun{
+			object: objects.NewPipelineRunObjectV1Beta1(&v1beta1.PipelineRun{ //nolint:staticcheck
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "foo",
 					Namespace: "bar",
@@ -71,7 +70,7 @@ func TestBackend_StorePayload(t *testing.T) {
 				Status: v1beta1.PipelineRunStatus{
 					PipelineRunStatusFields: v1beta1.PipelineRunStatusFields{
 						PipelineResults: []v1beta1.PipelineRunResult{
-							{Name: "IMAGE_URL", Value: *v1beta1.NewArrayOrString("mockImage")},
+							{Name: "IMAGE_URL", Value: *v1beta1.NewStructuredValues("mockImage")},
 						},
 					},
 				},
@@ -87,7 +86,6 @@ func TestBackend_StorePayload(t *testing.T) {
 
 			b := &Backend{
 				pipelineclientset: c,
-				logger:            logtesting.TestLogger(t),
 			}
 			payload, err := json.Marshal(tt.payload)
 			if err != nil {

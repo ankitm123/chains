@@ -14,7 +14,15 @@ The key creation will be handled in sigstore, however the Azure Key Vault and th
 
 Different commands require different Key Vault access policies. For more information check the official [Azure Docs](https://azure.microsoft.com/en-us/services/key-vault/).
 
-**cosign generate-key-pair**
+## Using Azure KMS with Cosign
+
+An Azure KMS key must be provided in the following format:
+`azurekms://[Key Vault Name].vault.azure.net/[Key Name]`
+
+A specific key version can optionally be provided:
+`azurekms://[Key Vault Name].vault.azure.net/[Key Name]/[Key Version]`
+
+### cosign generate-key-pair
 
 Required access policies (keys): `get`, `create`
 
@@ -22,7 +30,7 @@ Required access policies (keys): `get`, `create`
 cosign generate-key-pair --kms azurekms://[Key Vault Name].vault.azure.net/[Key Name]
 ```
 
-**cosign sign**
+### cosign sign
 
 Required access policies (keys): `get`, `sign`
 
@@ -31,7 +39,7 @@ az acr login --name [Container Registry Name]
 cosign sign --key azurekms://[Key Vault Name].vault.azure.net/[Key Name] [Container Registry Name].azurecr.io/[Image Name]
 ```
 
-**cosign verify**
+### cosign verify
 
 Required access policy (keys): `verify`
 
@@ -42,14 +50,27 @@ cosign verify --key azurekms://[Key Vault Name].vault.azure.net/[Key Name] [Cont
 
 ## Authentication
 
-There are multiple authentication methods supported for Azure Key Vault and by default they will be evaluated in the following order:
+This module uses the [`DefaultCredential` type](https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/azidentity#DefaultAzureCredential)
+to authenticate. This type supports the following authentication methods:
 
-1. Client credentials (FromEnvironment)
-1. Client certificate (FromEnvironment)
-1. Username password (FromEnvironment)
-1. MSI (FromEnvironment)
-1. CLI (FromCLI)
+1. Environment variables
+1. Workload identity
+1. Managed identity
+1. Azure CLI
+1. Azure Developer CLI
 
-You can force either `FromEnvironment` or `FromCLI` by configuring the environment variable `AZURE_AUTH_METHOD` to either `environment` or `cli`.
+See the [official documentation](
+https://learn.microsoft.com/en-us/azure/developer/go/azure-sdk-authentication?tabs=bash) for more information.
 
-For backward compatibility, if you configure `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET`, `FromEnvironment` will be used.
+If you would like to use a cloud other than the Azure public cloud, configure `AZURE_ENVIRONMENT`. The following values are accepted:
+- `AZUREUSGOVERNMENT`, `AZUREUSGOVERNMENTCLOUD` uses the Azure US Government Cloud
+- `AZURECHINACLOUD` uses Azure China Cloud
+- `AZURECLOUD`, `AZUREPUBLICCLOUD` uses the public cloud
+
+If `AZURE_ENVIRONMENT` is not configured, Azure public cloud is used.
+
+## Integration Testing
+
+In addition to unit tests in this module, there is `integration_test.go`, which requires you to provide either environment or CLI credentials. Because the Sigstore project does not use Azure, the tests are not run as part of any CI/CD. These tests are for Azure client developers to test that changes work as expected against their own Azure subscription.
+
+Run the integration tests with `go test -tags=integration ./...` in the root of this module.

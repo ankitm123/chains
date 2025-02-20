@@ -16,6 +16,8 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
+	newidtoken "cloud.google.com/go/auth/credentials/idtoken"
+	"cloud.google.com/go/auth/oauth2adapt"
 	"google.golang.org/api/impersonate"
 	"google.golang.org/api/internal"
 	"google.golang.org/api/option"
@@ -34,6 +36,7 @@ const (
 	unknownCredType credentialsType = iota
 	serviceAccount
 	impersonatedServiceAccount
+	externalAccount
 )
 
 // NewClient creates a HTTP Client that automatically adds an ID token to each
@@ -94,7 +97,28 @@ func NewTokenSource(ctx context.Context, audience string, opts ...ClientOption) 
 	if ds.ImpersonationConfig != nil {
 		return nil, fmt.Errorf("idtoken: option.WithImpersonatedCredentials not supported")
 	}
+	if ds.IsNewAuthLibraryEnabled() {
+		return newTokenSourceNewAuth(ctx, audience, &ds)
+	}
 	return newTokenSource(ctx, audience, &ds)
+}
+
+func newTokenSourceNewAuth(ctx context.Context, audience string, ds *internal.DialSettings) (oauth2.TokenSource, error) {
+	if ds.AuthCredentials != nil {
+		return nil, fmt.Errorf("idtoken: option.WithTokenProvider not supported")
+	}
+	creds, err := newidtoken.NewCredentials(&newidtoken.Options{
+		Audience:        audience,
+		CustomClaims:    ds.CustomClaims,
+		CredentialsFile: ds.CredentialsFile,
+		CredentialsJSON: ds.CredentialsJSON,
+		Client:          oauth2.NewClient(ctx, nil),
+		Logger:          ds.Logger,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return oauth2adapt.TokenSourceFromTokenProvider(creds), nil
 }
 
 func newTokenSource(ctx context.Context, audience string, ds *internal.DialSettings) (oauth2.TokenSource, error) {
@@ -139,7 +163,7 @@ func tokenSourceFromBytes(ctx context.Context, data []byte, audience string, ds 
 			return nil, err
 		}
 		return oauth2.ReuseTokenSource(tok, ts), nil
-	case impersonatedServiceAccount:
+	case impersonatedServiceAccount, externalAccount:
 		type url struct {
 			ServiceAccountImpersonationURL string `json:"service_account_impersonation_url"`
 		}
@@ -155,7 +179,7 @@ func tokenSourceFromBytes(ctx context.Context, data []byte, audience string, ds 
 			TargetPrincipal: account,
 			IncludeEmail:    true,
 		}
-		ts, err := impersonate.IDTokenSource(ctx, config)
+		ts, err := impersonate.IDTokenSource(ctx, config, option.WithCredentialsJSON(data))
 		if err != nil {
 			return nil, err
 		}
@@ -188,6 +212,8 @@ func parseCredType(typeString string) credentialsType {
 		return serviceAccount
 	case "impersonated_service_account":
 		return impersonatedServiceAccount
+	case "external_account":
+		return externalAccount
 	default:
 		return unknownCredType
 	}

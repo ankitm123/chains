@@ -2,17 +2,22 @@
 
 approvers:
 - chuangw6
-- dlorenc
-- font
+- chitrangpatel
 - lcarva
-- lukehinds
-- mattmoor
-- mpeters
 - priyawadhwa
+- PuneetPunamiya
 - wlynch
 
 reviewers:
-- chuangw6
+- aaron-prindle
+- chitrangpatel
 - lcarva
-- priyawadhwa
+- PuneetPunamiya
 - wlynch
+
+emeritus_approvers:
+- dlorenc
+- font
+- lukehinds
+- mattmoor
+- mpeters

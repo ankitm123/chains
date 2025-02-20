@@ -5,6 +5,214 @@
   "protoPackage": "google.cloud.kms.v1",
   "libraryPackage": "cloud.google.com/go/kms/apiv1",
   "services": {
+    "Autokey": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "AutokeyClient",
+          "rpcs": {
+            "CreateKeyHandle": {
+              "methods": [
+                "CreateKeyHandle"
+              ]
+            },
+            "GetIamPolicy": {
+              "methods": [
+                "GetIamPolicy"
+              ]
+            },
+            "GetKeyHandle": {
+              "methods": [
+                "GetKeyHandle"
+              ]
+            },
+            "GetLocation": {
+              "methods": [
+                "GetLocation"
+              ]
+            },
+            "GetOperation": {
+              "methods": [
+                "GetOperation"
+              ]
+            },
+            "ListKeyHandles": {
+              "methods": [
+                "ListKeyHandles"
+              ]
+            },
+            "ListLocations": {
+              "methods": [
+                "ListLocations"
+              ]
+            },
+            "SetIamPolicy": {
+              "methods": [
+                "SetIamPolicy"
+              ]
+            },
+            "TestIamPermissions": {
+              "methods": [
+                "TestIamPermissions"
+              ]
+            }
+          }
+        },
+        "rest": {
+          "libraryClient": "AutokeyClient",
+          "rpcs": {
+            "CreateKeyHandle": {
+              "methods": [
+                "CreateKeyHandle"
+              ]
+            },
+            "GetIamPolicy": {
+              "methods": [
+                "GetIamPolicy"
+              ]
+            },
+            "GetKeyHandle": {
+              "methods": [
+                "GetKeyHandle"
+              ]
+            },
+            "GetLocation": {
+              "methods": [
+                "GetLocation"
+              ]
+            },
+            "GetOperation": {
+              "methods": [
+                "GetOperation"
+              ]
+            },
+            "ListKeyHandles": {
+              "methods": [
+                "ListKeyHandles"
+              ]
+            },
+            "ListLocations": {
+              "methods": [
+                "ListLocations"
+              ]
+            },
+            "SetIamPolicy": {
+              "methods": [
+                "SetIamPolicy"
+              ]
+            },
+            "TestIamPermissions": {
+              "methods": [
+                "TestIamPermissions"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "AutokeyAdmin": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "AutokeyAdminClient",
+          "rpcs": {
+            "GetAutokeyConfig": {
+              "methods": [
+                "GetAutokeyConfig"
+              ]
+            },
+            "GetIamPolicy": {
+              "methods": [
+                "GetIamPolicy"
+              ]
+            },
+            "GetLocation": {
+              "methods": [
+                "GetLocation"
+              ]
+            },
+            "GetOperation": {
+              "methods": [
+                "GetOperation"
+              ]
+            },
+            "ListLocations": {
+              "methods": [
+                "ListLocations"
+              ]
+            },
+            "SetIamPolicy": {
+              "methods": [
+                "SetIamPolicy"
+              ]
+            },
+            "ShowEffectiveAutokeyConfig": {
+              "methods": [
+                "ShowEffectiveAutokeyConfig"
+              ]
+            },
+            "TestIamPermissions": {
+              "methods": [
+                "TestIamPermissions"
+              ]
+            },
+            "UpdateAutokeyConfig": {
+              "methods": [
+                "UpdateAutokeyConfig"
+              ]
+            }
+          }
+        },
+        "rest": {
+          "libraryClient": "AutokeyAdminClient",
+          "rpcs": {
+            "GetAutokeyConfig": {
+              "methods": [
+                "GetAutokeyConfig"
+              ]
+            },
+            "GetIamPolicy": {
+              "methods": [
+                "GetIamPolicy"
+              ]
+            },
+            "GetLocation": {
+              "methods": [
+                "GetLocation"
+              ]
+            },
+            "GetOperation": {
+              "methods": [
+                "GetOperation"
+              ]
+            },
+            "ListLocations": {
+              "methods": [
+                "ListLocations"
+              ]
+            },
+            "SetIamPolicy": {
+              "methods": [
+                "SetIamPolicy"
+              ]
+            },
+            "ShowEffectiveAutokeyConfig": {
+              "methods": [
+                "ShowEffectiveAutokeyConfig"
+              ]
+            },
+            "TestIamPermissions": {
+              "methods": [
+                "TestIamPermissions"
+              ]
+            },
+            "UpdateAutokeyConfig": {
+              "methods": [
+                "UpdateAutokeyConfig"
+              ]
+            }
+          }
+        }
+      }
+    },
     "EkmService": {
       "clients": {
         "grpc": {
@@ -13,6 +221,11 @@
             "CreateEkmConnection": {
               "methods": [
                 "CreateEkmConnection"
+              ]
+            },
+            "GetEkmConfig": {
+              "methods": [
+                "GetEkmConfig"
               ]
             },
             "GetEkmConnection": {
@@ -28,6 +241,11 @@
             "GetLocation": {
               "methods": [
                 "GetLocation"
+              ]
+            },
+            "GetOperation": {
+              "methods": [
+                "GetOperation"
               ]
             },
             "ListEkmConnections": {
@@ -50,9 +268,19 @@
                 "TestIamPermissions"
               ]
             },
+            "UpdateEkmConfig": {
+              "methods": [
+                "UpdateEkmConfig"
+              ]
+            },
             "UpdateEkmConnection": {
               "methods": [
                 "UpdateEkmConnection"
+              ]
+            },
+            "VerifyConnectivity": {
+              "methods": [
+                "VerifyConnectivity"
               ]
             }
           }
@@ -65,6 +293,11 @@
                 "CreateEkmConnection"
               ]
             },
+            "GetEkmConfig": {
+              "methods": [
+                "GetEkmConfig"
+              ]
+            },
             "GetEkmConnection": {
               "methods": [
                 "GetEkmConnection"
@@ -78,6 +311,11 @@
             "GetLocation": {
               "methods": [
                 "GetLocation"
+              ]
+            },
+            "GetOperation": {
+              "methods": [
+                "GetOperation"
               ]
             },
             "ListEkmConnections": {
@@ -100,9 +338,19 @@
                 "TestIamPermissions"
               ]
             },
+            "UpdateEkmConfig": {
+              "methods": [
+                "UpdateEkmConfig"
+              ]
+            },
             "UpdateEkmConnection": {
               "methods": [
                 "UpdateEkmConnection"
+              ]
+            },
+            "VerifyConnectivity": {
+              "methods": [
+                "VerifyConnectivity"
               ]
             }
           }
@@ -194,6 +442,11 @@
                 "GetLocation"
               ]
             },
+            "GetOperation": {
+              "methods": [
+                "GetOperation"
+              ]
+            },
             "GetPublicKey": {
               "methods": [
                 "GetPublicKey"
@@ -237,6 +490,16 @@
             "MacVerify": {
               "methods": [
                 "MacVerify"
+              ]
+            },
+            "RawDecrypt": {
+              "methods": [
+                "RawDecrypt"
+              ]
+            },
+            "RawEncrypt": {
+              "methods": [
+                "RawEncrypt"
               ]
             },
             "RestoreCryptoKeyVersion": {
@@ -354,6 +617,11 @@
                 "GetLocation"
               ]
             },
+            "GetOperation": {
+              "methods": [
+                "GetOperation"
+              ]
+            },
             "GetPublicKey": {
               "methods": [
                 "GetPublicKey"
@@ -397,6 +665,16 @@
             "MacVerify": {
               "methods": [
                 "MacVerify"
+              ]
+            },
+            "RawDecrypt": {
+              "methods": [
+                "RawDecrypt"
+              ]
+            },
+            "RawEncrypt": {
+              "methods": [
+                "RawEncrypt"
               ]
             },
             "RestoreCryptoKeyVersion": {

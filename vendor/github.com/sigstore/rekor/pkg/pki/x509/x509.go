@@ -18,15 +18,18 @@ package x509
 import (
 	"bytes"
 	"crypto"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/asn1"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 
-	validator "github.com/go-playground/validator/v10"
+	"github.com/asaskevich/govalidator"
+	"github.com/sigstore/rekor/pkg/pki/identity"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	sigsig "github.com/sigstore/sigstore/pkg/signature"
 )
@@ -35,17 +38,23 @@ import (
 var EmailAddressOID asn1.ObjectIdentifier = []int{1, 2, 840, 113549, 1, 9, 1}
 
 type Signature struct {
-	signature []byte
+	signature        []byte
+	verifierLoadOpts []sigsig.LoadOption
 }
 
 // NewSignature creates and validates an x509 signature object
 func NewSignature(r io.Reader) (*Signature, error) {
+	return NewSignatureWithOpts(r)
+}
+
+func NewSignatureWithOpts(r io.Reader, opts ...sigsig.LoadOption) (*Signature, error) {
 	b, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
 	return &Signature{
-		signature: b,
+		signature:        b,
+		verifierLoadOpts: opts,
 	}, nil
 }
 
@@ -58,7 +67,7 @@ func (s Signature) CanonicalValue() ([]byte, error) {
 func (s Signature) Verify(r io.Reader, k interface{}, opts ...sigsig.VerifyOption) error {
 	if len(s.signature) == 0 {
 		//lint:ignore ST1005 X509 is proper use of term
-		return fmt.Errorf("X509 signature has not been initialized")
+		return errors.New("X509 signature has not been initialized")
 	}
 
 	key, ok := k.(*PublicKey)
@@ -81,7 +90,7 @@ func (s Signature) Verify(r io.Reader, k interface{}, opts ...sigsig.VerifyOptio
 		}
 	}
 
-	verifier, err := sigsig.LoadVerifier(p, crypto.SHA256)
+	verifier, err := sigsig.LoadVerifierWithOpts(p, s.verifierLoadOpts...)
 	if err != nil {
 		return err
 	}
@@ -106,8 +115,9 @@ func NewPublicKey(r io.Reader) (*PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
+	trimmedRawPub := bytes.TrimSpace(rawPub)
 
-	block, rest := pem.Decode(rawPub)
+	block, rest := pem.Decode(trimmedRawPub)
 	if block == nil {
 		return nil, errors.New("invalid public key: failure decoding PEM")
 	}
@@ -115,7 +125,7 @@ func NewPublicKey(r io.Reader) (*PublicKey, error) {
 	// Handle certificate chain, concatenated PEM-encoded certificates
 	if len(rest) > 0 {
 		// Support up to 10 certificates in a chain, to avoid parsing extremely long chains
-		certs, err := cryptoutils.UnmarshalCertificatesFromPEMLimited(rawPub, 10)
+		certs, err := cryptoutils.UnmarshalCertificatesFromPEMLimited(trimmedRawPub, 10)
 		if err != nil {
 			return nil, err
 		}
@@ -154,7 +164,7 @@ func (k PublicKey) CanonicalValue() (encoded []byte, err error) {
 	case k.certs != nil:
 		encoded, err = cryptoutils.MarshalCertificatesToPEM(k.certs)
 	default:
-		err = fmt.Errorf("x509 public key has not been initialized")
+		err = errors.New("x509 public key has not been initialized")
 	}
 
 	return
@@ -180,10 +190,8 @@ func (k PublicKey) EmailAddresses() []string {
 		cert = k.certs[0]
 	}
 	if cert != nil {
-		validate := validator.New()
 		for _, name := range cert.EmailAddresses {
-			errs := validate.Var(name, "required,email")
-			if errs == nil {
+			if govalidator.IsEmail(name) {
 				names = append(names, strings.ToLower(name))
 			}
 		}
@@ -193,7 +201,7 @@ func (k PublicKey) EmailAddresses() []string {
 
 // Subjects implements the pki.PublicKey interface
 func (k PublicKey) Subjects() []string {
-	var names []string
+	var subjects []string
 	var cert *x509.Certificate
 	if k.cert != nil {
 		cert = k.cert.c
@@ -201,19 +209,43 @@ func (k PublicKey) Subjects() []string {
 		cert = k.certs[0]
 	}
 	if cert != nil {
-		validate := validator.New()
-		for _, name := range cert.EmailAddresses {
-			if errs := validate.Var(name, "required,email"); errs == nil {
-				names = append(names, strings.ToLower(name))
-			}
-		}
-		for _, name := range cert.URIs {
-			if errs := validate.Var(name.String(), "required,uri"); errs == nil {
-				names = append(names, strings.ToLower(name.String()))
-			}
-		}
+		subjects = cryptoutils.GetSubjectAlternateNames(cert)
 	}
-	return names
+	return subjects
+}
+
+// Identities implements the pki.PublicKey interface
+func (k PublicKey) Identities() ([]identity.Identity, error) {
+	// k contains either a key, a cert, or a list of certs
+	if k.key != nil {
+		pkixKey, err := cryptoutils.MarshalPublicKeyToDER(k.key)
+		if err != nil {
+			return nil, err
+		}
+		digest := sha256.Sum256(pkixKey)
+		return []identity.Identity{{
+			Crypto:      k.key,
+			Raw:         pkixKey,
+			Fingerprint: hex.EncodeToString(digest[:]),
+		}}, nil
+	}
+
+	var cert *x509.Certificate
+	switch {
+	case k.cert != nil:
+		cert = k.cert.c
+	case len(k.certs) > 0:
+		cert = k.certs[0]
+	default:
+		return nil, errors.New("no key, certificate or certificate chain provided")
+	}
+
+	digest := sha256.Sum256(cert.Raw)
+	return []identity.Identity{{
+		Crypto:      cert,
+		Raw:         cert.Raw,
+		Fingerprint: hex.EncodeToString(digest[:]),
+	}}, nil
 }
 
 func verifyCertChain(certChain []*x509.Certificate) error {

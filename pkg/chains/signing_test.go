@@ -14,24 +14,26 @@ limitations under the License.
 package chains
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	intoto "github.com/in-toto/attestation/go/v1"
 	"github.com/sigstore/rekor/pkg/generated/models"
 	"github.com/tektoncd/chains/pkg/chains/objects"
 	"github.com/tektoncd/chains/pkg/chains/signing"
 	"github.com/tektoncd/chains/pkg/chains/storage"
 	"github.com/tektoncd/chains/pkg/config"
 	"github.com/tektoncd/chains/pkg/test/tekton"
-	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	fakepipelineclient "github.com/tektoncd/pipeline/pkg/client/injection/client/fake"
-	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"knative.dev/pkg/logging"
 	rtesting "knative.dev/pkg/reconciler/testing"
 
 	_ "github.com/tektoncd/chains/pkg/chains/formats/all"
@@ -42,13 +44,13 @@ func TestSigner_Sign(t *testing.T) {
 	// - generates payloads
 	// - stores them in the configured systems
 	// - marks the object as signed
-	tro := objects.NewTaskRunObject(&v1beta1.TaskRun{
+	tro := objects.NewTaskRunObjectV1(&v1.TaskRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "foo",
 		},
 	})
 
-	pro := objects.NewPipelineRunObject(&v1beta1.PipelineRun{
+	pro := objects.NewPipelineRunObjectV1(&v1.PipelineRun{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "foo",
 		},
@@ -58,7 +60,7 @@ func TestSigner_Sign(t *testing.T) {
 		Artifacts: config.ArtifactConfigs{
 			TaskRuns: config.Artifact{
 				Format:         "in-toto",
-				StorageBackend: sets.NewString("mock"),
+				StorageBackend: sets.New[string]("mock"),
 				Signer:         "x509",
 			},
 		},
@@ -68,7 +70,7 @@ func TestSigner_Sign(t *testing.T) {
 		Artifacts: config.ArtifactConfigs{
 			PipelineRuns: config.Artifact{
 				Format:         "in-toto",
-				StorageBackend: sets.NewString("mock"),
+				StorageBackend: sets.New[string]("mock"),
 				Signer:         "x509",
 			},
 		},
@@ -188,14 +190,14 @@ func TestSigner_Sign(t *testing.T) {
 
 func TestSigner_Transparency(t *testing.T) {
 	newTaskRun := func(name string) objects.TektonObject {
-		return objects.NewTaskRunObject(&v1beta1.TaskRun{
+		return objects.NewTaskRunObjectV1(&v1.TaskRun{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: name,
 			},
 		})
 	}
 	newPipelineRun := func(name string) objects.TektonObject {
-		return objects.NewPipelineRunObject(&v1beta1.PipelineRun{
+		return objects.NewPipelineRunObjectV1(&v1.PipelineRun{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: name,
 			},
@@ -204,12 +206,12 @@ func TestSigner_Transparency(t *testing.T) {
 	setAnnotation := func(obj objects.TektonObject, key, value string) {
 		// TODO: opportunity to add code reuse
 		switch o := obj.GetObject().(type) {
-		case *v1beta1.PipelineRun:
+		case *v1.PipelineRun:
 			if o.Annotations == nil {
 				o.Annotations = make(map[string]string)
 			}
 			o.Annotations[key] = value
-		case *v1beta1.TaskRun:
+		case *v1.TaskRun:
 			if o.Annotations == nil {
 				o.Annotations = make(map[string]string)
 			}
@@ -228,7 +230,7 @@ func TestSigner_Transparency(t *testing.T) {
 				Artifacts: config.ArtifactConfigs{
 					TaskRuns: config.Artifact{
 						Format:         "slsa/v1",
-						StorageBackend: sets.NewString("mock"),
+						StorageBackend: sets.New[string]("mock"),
 						Signer:         "x509",
 					},
 				},
@@ -244,7 +246,7 @@ func TestSigner_Transparency(t *testing.T) {
 				Artifacts: config.ArtifactConfigs{
 					PipelineRuns: config.Artifact{
 						Format:         "slsa/v1",
-						StorageBackend: sets.NewString("mock"),
+						StorageBackend: sets.New[string]("mock"),
 						Signer:         "x509",
 					},
 				},
@@ -332,8 +334,6 @@ func TestSigner_Transparency(t *testing.T) {
 }
 
 func TestSigningObjects(t *testing.T) {
-	ctx, _ := rtesting.SetupFakeContext(t)
-	logger := logging.FromContext(ctx)
 	tests := []struct {
 		name       string
 		signers    []string
@@ -347,7 +347,7 @@ func TestSigningObjects(t *testing.T) {
 				Artifacts: config.ArtifactConfigs{
 					TaskRuns: config.Artifact{
 						Format:         "in-toto",
-						StorageBackend: sets.NewString("mock"),
+						StorageBackend: sets.New[string]("mock"),
 						Signer:         "x509",
 					},
 				},
@@ -361,12 +361,12 @@ func TestSigningObjects(t *testing.T) {
 				Artifacts: config.ArtifactConfigs{
 					TaskRuns: config.Artifact{
 						Format:         "in-toto",
-						StorageBackend: sets.NewString("mock"),
+						StorageBackend: sets.New[string]("mock"),
 						Signer:         "x509",
 					},
 					OCI: config.Artifact{
 						Format:         "in-toto",
-						StorageBackend: sets.NewString("mock"),
+						StorageBackend: sets.New[string]("mock"),
 						Signer:         "x509",
 					},
 				},
@@ -380,11 +380,11 @@ func TestSigningObjects(t *testing.T) {
 				Artifacts: config.ArtifactConfigs{
 					TaskRuns: config.Artifact{
 						Format:         "in-toto",
-						StorageBackend: sets.NewString("mock"),
+						StorageBackend: sets.New[string]("mock"),
 					},
 					OCI: config.Artifact{
 						Format:         "in-toto",
-						StorageBackend: sets.NewString("mock"),
+						StorageBackend: sets.New[string]("mock"),
 					},
 				},
 				Transparency: config.TransparencyConfig{
@@ -396,7 +396,8 @@ func TestSigningObjects(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			signers := allSigners(ctx, tt.SecretPath, tt.config, logger)
+			ctx, _ := rtesting.SetupFakeContext(t)
+			signers := allSigners(ctx, tt.SecretPath, tt.config)
 			var signerTypes []string
 			for _, signer := range signers {
 				signerTypes = append(signerTypes, signer.Type())
@@ -406,6 +407,84 @@ func TestSigningObjects(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetRawPayload(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  interface{}
+		expected string
+	}{
+		{
+			name: "intoto.Statement object",
+			payload: intoto.Statement{
+				Type:          "type1",
+				PredicateType: "predicate-type1",
+			},
+			expected: compactJSON(t, []byte(`{"_type":"type1","predicateType":"predicate-type1"}`)),
+		},
+		{
+			name: "*intoto.Statement object",
+			payload: &intoto.Statement{
+				Type:          "type1",
+				PredicateType: "predicate-type1",
+			},
+			expected: compactJSON(t, []byte(`{"_type":"type1","predicateType":"predicate-type1"}`)),
+		},
+		{
+			name:     "*intoto.Statement object - nil",
+			payload:  (func() *intoto.Statement { return nil })(),
+			expected: "null",
+		},
+		{
+			name:     "other object - nil",
+			payload:  nil,
+			expected: "null",
+		},
+		{
+			name: "other object with value",
+			payload: struct {
+				Name  string
+				ID    int
+				Inner any
+			}{
+				Name: "wrapper",
+				ID:   1,
+				Inner: struct {
+					InnerID     int
+					Description string
+					IsArtifact  bool
+				}{
+					InnerID:     2,
+					Description: "some description",
+					IsArtifact:  true,
+				},
+			},
+			expected: compactJSON(t, []byte(`{"Name":"wrapper","ID":1,"Inner": {"InnerID":2,"Description":"some description","IsArtifact":true}}`)),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := getRawPayload(test.payload)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			compactExpected := compactJSON(t, got)
+			if diff := cmp.Diff(test.expected, compactExpected); diff != "" {
+				t.Errorf("getRawPayload(), -want +got, diff = %s", diff)
+			}
+		})
+	}
+}
+
+func compactJSON(t *testing.T, jsonString []byte) string {
+	t.Helper()
+	dst := &bytes.Buffer{}
+	if err := json.Compact(dst, jsonString); err != nil {
+		t.Fatalf("error getting compact JSON: %v", err)
+	}
+	return dst.String()
 }
 
 func fakeAllBackends(backends []*mockBackend) map[string]storage.Backend {
@@ -418,7 +497,7 @@ func fakeAllBackends(backends []*mockBackend) map[string]storage.Backend {
 
 func setupMocks(rekor *mockRekor) func() {
 	oldRekor := getRekor
-	getRekor = func(_ string, _ *zap.SugaredLogger) (rekorClient, error) {
+	getRekor = func(_ string) (rekorClient, error) {
 		return rekor, nil
 	}
 	return func() {

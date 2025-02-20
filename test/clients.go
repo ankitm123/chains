@@ -35,11 +35,11 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
-	"github.com/sigstore/cosign/pkg/cosign"
+	"github.com/sigstore/cosign/v2/pkg/cosign"
 	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/tektoncd/pipeline/pkg/names"
 
@@ -111,7 +111,7 @@ func setup(ctx context.Context, t *testing.T, opts setupOpts) (*clients, string,
 		imageDest := fmt.Sprintf("%s/%s", c.internalRegistry, opts.kanikoTaskImage)
 		t.Logf("Creating Kaniko task referencing image %s", imageDest)
 		task := kanikoTask(t, namespace, imageDest)
-		if _, err := c.PipelineClient.TektonV1beta1().Tasks(namespace).Create(ctx, task, metav1.CreateOptions{}); err != nil {
+		if _, err := c.PipelineClient.TektonV1().Tasks(namespace).Create(ctx, task, metav1.CreateOptions{}); err != nil {
 			t.Fatalf("error creating task: %s", err)
 		}
 	}
@@ -203,7 +203,7 @@ type secret struct {
 
 func setupSecret(ctx context.Context, t *testing.T, c kubernetes.Interface, opts setupOpts) secret {
 	// Only overwrite the secret data if it isn't set.
-	namespace := "tekton-chains"
+	namespace := os.Getenv("namespace")
 	s := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "signing-secrets",
@@ -248,7 +248,6 @@ func setupSecret(ctx context.Context, t *testing.T, c kubernetes.Interface, opts
 	if _, err := c.CoreV1().Secrets(namespace).Update(ctx, &s, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(time.Minute) // https://github.com/tektoncd/chains/issues/664
 
 	return secret{
 		cosignPriv: cosignPriv,

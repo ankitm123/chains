@@ -22,6 +22,7 @@ package index
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -102,12 +103,19 @@ func (o *SearchIndexOK) IsCode(code int) bool {
 	return code == 200
 }
 
+// Code gets the status code for the search index o k response
+func (o *SearchIndexOK) Code() int {
+	return 200
+}
+
 func (o *SearchIndexOK) Error() string {
-	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndexOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndexOK %s", 200, payload)
 }
 
 func (o *SearchIndexOK) String() string {
-	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndexOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndexOK %s", 200, payload)
 }
 
 func (o *SearchIndexOK) GetPayload() []string {
@@ -163,12 +171,19 @@ func (o *SearchIndexBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the search index bad request response
+func (o *SearchIndexBadRequest) Code() int {
+	return 400
+}
+
 func (o *SearchIndexBadRequest) Error() string {
-	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndexBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndexBadRequest %s", 400, payload)
 }
 
 func (o *SearchIndexBadRequest) String() string {
-	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndexBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndexBadRequest %s", 400, payload)
 }
 
 func (o *SearchIndexBadRequest) GetPayload() *models.Error {
@@ -205,11 +220,6 @@ type SearchIndexDefault struct {
 	Payload *models.Error
 }
 
-// Code gets the status code for the search index default response
-func (o *SearchIndexDefault) Code() int {
-	return o._statusCode
-}
-
 // IsSuccess returns true when this search index default response has a 2xx status code
 func (o *SearchIndexDefault) IsSuccess() bool {
 	return o._statusCode/100 == 2
@@ -235,12 +245,19 @@ func (o *SearchIndexDefault) IsCode(code int) bool {
 	return o._statusCode == code
 }
 
+// Code gets the status code for the search index default response
+func (o *SearchIndexDefault) Code() int {
+	return o._statusCode
+}
+
 func (o *SearchIndexDefault) Error() string {
-	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndex default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndex default %s", o._statusCode, payload)
 }
 
 func (o *SearchIndexDefault) String() string {
-	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndex default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/index/retrieve][%d] searchIndex default %s", o._statusCode, payload)
 }
 
 func (o *SearchIndexDefault) GetPayload() *models.Error {

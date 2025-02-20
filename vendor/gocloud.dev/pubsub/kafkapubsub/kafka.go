@@ -64,7 +64,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"gocloud.dev/gcerrors"
 	"gocloud.dev/pubsub"
 	"gocloud.dev/pubsub/batcher"
@@ -136,7 +136,9 @@ const Scheme = "kafka"
 // URLOpener opens Kafka URLs like "kafka://mytopic" for topics and
 // "kafka://group?topic=mytopic" for subscriptions.
 //
-// For topics, the URL's host+path is used as the topic name.
+// For topics, the URL's host+path is used as the topic name,
+// and the "key_name" query parameter is used to extract the routing key
+// from metadata.
 //
 // For subscriptions, the URL's host+path is used as the group name,
 // and the "topic" query parameter(s) are used as the set of topics to
@@ -159,9 +161,19 @@ type URLOpener struct {
 
 // OpenTopicURL opens a pubsub.Topic based on u.
 func (o *URLOpener) OpenTopicURL(ctx context.Context, u *url.URL) (*pubsub.Topic, error) {
-	for param := range u.Query() {
-		return nil, fmt.Errorf("open topic %v: invalid query parameter %q", u, param)
+	for param, value := range u.Query() {
+		switch param {
+		case "key_name":
+			if len(value) != 1 || len(value[0]) == 0 {
+				return nil, fmt.Errorf("open topic %v: invalid query parameter %q", u, param)
+			}
+
+			o.TopicOptions.KeyName = value[0]
+		default:
+			return nil, fmt.Errorf("open topic %v: invalid query parameter %q", u, param)
+		}
 	}
+
 	topicName := path.Join(u.Host, u.Path)
 	return OpenTopic(o.Brokers, o.Config, topicName, &o.TopicOptions)
 }
@@ -226,7 +238,7 @@ type TopicOptions struct {
 //
 // It uses a sarama.SyncProducer to send messages. Producer options can
 // be configured in the Producer section of the sarama.Config:
-// https://godoc.org/github.com/Shopify/sarama#Config.
+// https://godoc.org/github.com/IBM/sarama#Config.
 //
 // Config.Producer.Return.Success must be set to true.
 func OpenTopic(brokers []string, config *sarama.Config, topicName string, opts *TopicOptions) (*pubsub.Topic, error) {
@@ -234,13 +246,13 @@ func OpenTopic(brokers []string, config *sarama.Config, topicName string, opts *
 	if err != nil {
 		return nil, err
 	}
-	bo := sendBatcherOpts.NewMergedOptions(&opts.BatcherOptions)
+	bo := sendBatcherOpts.NewMergedOptions(&dt.opts.BatcherOptions)
 	return pubsub.NewTopic(dt, bo), nil
 }
 
 // openTopic returns the driver for OpenTopic. This function exists so the test
 // harness can get the driver interface implementation if it needs to.
-func openTopic(brokers []string, config *sarama.Config, topicName string, opts *TopicOptions) (driver.Topic, error) {
+func openTopic(brokers []string, config *sarama.Config, topicName string, opts *TopicOptions) (*topic, error) {
 	if opts == nil {
 		opts = &TopicOptions{}
 	}
@@ -388,7 +400,7 @@ type SubscriptionOptions struct {
 //
 // It uses a sarama.ConsumerGroup to receive messages. Consumer options can
 // be configured in the Consumer section of the sarama.Config:
-// https://godoc.org/github.com/Shopify/sarama#Config.
+// https://godoc.org/github.com/IBM/sarama#Config.
 func OpenSubscription(brokers []string, config *sarama.Config, group string, topics []string, opts *SubscriptionOptions) (*pubsub.Subscription, error) {
 	ds, err := openSubscription(brokers, config, group, topics, opts)
 	if err != nil {
@@ -424,7 +436,7 @@ func openSubscription(brokers []string, config *sarama.Config, group string, top
 	// We're registering ds as our ConsumerGroupHandler, so sarama will
 	// call [Setup, ConsumeClaim (possibly more than once), Cleanup]
 	// repeatedly as the consumer group is rebalanced.
-	// See https://godoc.org/github.com/Shopify/sarama#ConsumerGroup.
+	// See https://godoc.org/github.com/IBM/sarama#ConsumerGroup.
 	go func() {
 		for {
 			ds.closeErr = consumerGroup.Consume(ctx, topics, ds)

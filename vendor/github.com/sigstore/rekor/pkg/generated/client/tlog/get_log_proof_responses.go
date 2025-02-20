@@ -22,6 +22,7 @@ package tlog
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -102,12 +103,19 @@ func (o *GetLogProofOK) IsCode(code int) bool {
 	return code == 200
 }
 
+// Code gets the status code for the get log proof o k response
+func (o *GetLogProofOK) Code() int {
+	return 200
+}
+
 func (o *GetLogProofOK) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProofOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProofOK %s", 200, payload)
 }
 
 func (o *GetLogProofOK) String() string {
-	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProofOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProofOK %s", 200, payload)
 }
 
 func (o *GetLogProofOK) GetPayload() *models.ConsistencyProof {
@@ -165,12 +173,19 @@ func (o *GetLogProofBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the get log proof bad request response
+func (o *GetLogProofBadRequest) Code() int {
+	return 400
+}
+
 func (o *GetLogProofBadRequest) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProofBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProofBadRequest %s", 400, payload)
 }
 
 func (o *GetLogProofBadRequest) String() string {
-	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProofBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProofBadRequest %s", 400, payload)
 }
 
 func (o *GetLogProofBadRequest) GetPayload() *models.Error {
@@ -207,11 +222,6 @@ type GetLogProofDefault struct {
 	Payload *models.Error
 }
 
-// Code gets the status code for the get log proof default response
-func (o *GetLogProofDefault) Code() int {
-	return o._statusCode
-}
-
 // IsSuccess returns true when this get log proof default response has a 2xx status code
 func (o *GetLogProofDefault) IsSuccess() bool {
 	return o._statusCode/100 == 2
@@ -237,12 +247,19 @@ func (o *GetLogProofDefault) IsCode(code int) bool {
 	return o._statusCode == code
 }
 
+// Code gets the status code for the get log proof default response
+func (o *GetLogProofDefault) Code() int {
+	return o._statusCode
+}
+
 func (o *GetLogProofDefault) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProof default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProof default %s", o._statusCode, payload)
 }
 
 func (o *GetLogProofDefault) String() string {
-	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProof default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/proof][%d] getLogProof default %s", o._statusCode, payload)
 }
 
 func (o *GetLogProofDefault) GetPayload() *models.Error {

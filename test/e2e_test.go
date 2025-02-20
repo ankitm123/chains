@@ -21,12 +21,12 @@ package test
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -36,25 +36,40 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	intoto "github.com/in-toto/attestation/go/v1"
 	"github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/sigstore/sigstore/pkg/signature"
+	"github.com/tektoncd/chains/pkg/artifacts"
 	"github.com/tektoncd/chains/pkg/chains"
 	"github.com/tektoncd/chains/pkg/chains/objects"
 	"github.com/tektoncd/chains/pkg/chains/provenance"
 	"github.com/tektoncd/chains/pkg/test/tekton"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/apis/resource/v1alpha1"
+	"google.golang.org/protobuf/encoding/protojson"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logtesting "knative.dev/pkg/logging/testing"
 )
+
+var namespace string
+
+const localhost string = "localhost"
+
+func init() {
+	namespace = os.Getenv("namespace")
+	if namespace == "" {
+		namespace = "tekton-chains"
+	}
+}
 
 func TestInstall(t *testing.T) {
 	ctx := logtesting.TestContextWithLogger(t)
 	c, _, cleanup := setup(ctx, t, setupOpts{})
 	t.Cleanup(cleanup)
-	dep, err := c.KubeClient.AppsV1().Deployments("tekton-chains").Get(ctx, "tekton-chains-controller", metav1.GetOptions{})
+	dep, err := c.KubeClient.AppsV1().Deployments(namespace).Get(ctx, "tekton-chains-controller", metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("Error getting chains deployment: %v", err)
 	}
@@ -139,7 +154,10 @@ func TestRekor(t *testing.T) {
 				"artifacts.oci.format":      "simplesigning",
 				"artifacts.oci.signer":      "x509",
 				"artifacts.oci.storage":     "tekton",
-				"transparency.enabled":      "manual",
+				// TODO: revert back to manual once we get the fix in tektoncd/pipeline
+				// Chains issue: https://github.com/tektoncd/chains/issues/1117
+				// Pipelines issue: https://github.com/tektoncd/pipeline/issues/7291
+				"transparency.enabled": "true",
 			},
 			getObject: getTaskRunObject,
 		},
@@ -152,7 +170,10 @@ func TestRekor(t *testing.T) {
 				"artifacts.oci.format":          "simplesigning",
 				"artifacts.oci.signer":          "x509",
 				"artifacts.oci.storage":         "tekton",
-				"transparency.enabled":          "manual",
+				// TODO: revert back to manual once we get the fix in tektoncd/pipeline
+				// Chains issue: https://github.com/tektoncd/chains/issues/1117
+				// Pipelines issue: https://github.com/tektoncd/pipeline/issues/7291
+				"transparency.enabled": "true",
 			},
 			getObject: getPipelineRunObject,
 		},
@@ -210,13 +231,23 @@ func TestOCISigning(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := logtesting.TestContextWithLogger(t)
 			c, ns, cleanup := setup(ctx, t, test.opts)
+			OPENSHIFT := os.Getenv("OPENSHIFT")
+			if OPENSHIFT == localhost {
+				if err := assignSCC(ns); err != nil {
+					t.Fatalf("error creating scc: %s", err)
+				}
+			}
+
 			t.Cleanup(cleanup)
 
 			// Setup the right config.
-			resetConfig := setConfigMap(ctx, t, c, map[string]string{"artifacts.oci.storage": "tekton", "artifacts.taskrun.format": "in-toto"})
+			resetConfig := setConfigMap(ctx, t, c, map[string]string{
+				"artifacts.oci.storage":    "tekton",
+				"artifacts.taskrun.format": "in-toto",
+			})
 			t.Cleanup(resetConfig)
 
-			tro := getTaskRunObject(ns)
+			tro := getTaskRunObjectV1(ns)
 
 			createdTro := tekton.CreateObject(t, ctx, c.PipelineClient, tro)
 
@@ -233,8 +264,15 @@ func TestOCISigning(t *testing.T) {
 
 			// Let's fetch the signature and body:
 			t.Log(obj.GetAnnotations())
+			if _, ok := obj.GetAnnotations()["chains.tekton.dev/signature-586789aa031f"]; !ok {
+				t.Fatal("TaskRun missing expected signature annotation: chains.tekton.dev/signature-586789aa031f")
+			}
+			if _, ok := obj.GetAnnotations()["chains.tekton.dev/payload-586789aa031f"]; !ok {
+				t.Fatal("TaskRun missing expected payload annotation: chains.tekton.dev/signature-586789aa031f")
+			}
 
-			sig, body := obj.GetAnnotations()["chains.tekton.dev/signature-05f95b26ed10"], obj.GetAnnotations()["chains.tekton.dev/payload-05f95b26ed10"]
+			sig, body := obj.GetAnnotations()["chains.tekton.dev/signature-586789aa031f"],
+				obj.GetAnnotations()["chains.tekton.dev/payload-586789aa031f"]
 			// base64 decode them
 			sigBytes, err := base64.StdEncoding.DecodeString(sig)
 			if err != nil {
@@ -374,6 +412,7 @@ func TestFulcio(t *testing.T) {
 }
 
 func base64Decode(t *testing.T, s string) []byte {
+	t.Helper()
 	b, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
 		b, err = base64.URLEncoding.DecodeString(s)
@@ -382,17 +421,6 @@ func base64Decode(t *testing.T, s string) []byte {
 		}
 	}
 	return b
-}
-
-// DSSE messages contain the signature and payload in one object, but our interface expects a signature and payload
-// This means we need to use one field and ignore the other. The DSSE verifier upstream uses the signature field and ignores
-// The message field, but we want the reverse here.
-type reverseDSSEVerifier struct {
-	signature.Verifier
-}
-
-func (w *reverseDSSEVerifier) VerifySignature(s io.Reader, m io.Reader, opts ...signature.VerifyOption) error {
-	return w.Verifier.VerifySignature(m, nil, opts...)
 }
 
 func TestOCIStorage(t *testing.T) {
@@ -415,8 +443,15 @@ func TestOCIStorage(t *testing.T) {
 	// create necessary resources
 	imageName := "chains-test-oci-storage"
 	image := fmt.Sprintf("%s/%s", c.internalRegistry, imageName)
+
+	OPENSHIFT := os.Getenv("OPENSHIFT")
+	if OPENSHIFT == localhost {
+		if err := assignSCC(ns); err != nil {
+			t.Fatalf("error creating scc: %s", err)
+		}
+	}
 	task := kanikoTask(t, ns, image)
-	if _, err := c.PipelineClient.TektonV1beta1().Tasks(ns).Create(ctx, task, metav1.CreateOptions{}); err != nil {
+	if _, err := c.PipelineClient.TektonV1().Tasks(ns).Create(ctx, task, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("error creating task: %s", err)
 	}
 
@@ -486,6 +521,13 @@ func TestMultiBackendStorage(t *testing.T) {
 				registry:        true,
 				kanikoTaskImage: image,
 			})
+
+			OPENSHIFT := os.Getenv("OPENSHIFT")
+			if OPENSHIFT == localhost {
+				if err := assignSCC(ns); err != nil {
+					t.Fatalf("error creating scc: %s", err)
+				}
+			}
 			t.Cleanup(cleanup)
 
 			resetConfig := setConfigMap(ctx, t, c, test.cm)
@@ -536,7 +578,7 @@ func TestRetryFailed(t *testing.T) {
 				registry:        true,
 				kanikoTaskImage: "chains-test-tr-retryfailed",
 			},
-			getObject: getTaskRunObject,
+			getObject: getTaskRunObjectV1,
 		},
 		{
 			name: "pipelinerun",
@@ -560,6 +602,14 @@ func TestRetryFailed(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := logtesting.TestContextWithLogger(t)
 			c, ns, cleanup := setup(ctx, t, test.opts)
+
+			OPENSHIFT := os.Getenv("OPENSHIFT")
+			if OPENSHIFT == localhost {
+				if err := assignSCC(ns); err != nil {
+					t.Fatalf("error creating scc: %s", err)
+				}
+			}
+
 			t.Cleanup(cleanup)
 
 			resetConfig := setConfigMap(ctx, t, c, test.cm)
@@ -569,7 +619,7 @@ func TestRetryFailed(t *testing.T) {
 			obj := tekton.CreateObject(t, ctx, c.PipelineClient, test.getObject(ns))
 
 			// Give it a minute to complete.
-			if got := waitForCondition(ctx, t, c.PipelineClient, obj, failed, time.Minute); got == nil {
+			if got := waitForCondition(ctx, t, c.PipelineClient, obj, failed, 2*time.Minute); got == nil {
 				t.Fatal("expected failure; object never failed")
 			}
 		})
@@ -634,30 +684,53 @@ var imageTaskRun = v1beta1.TaskRun{
 }
 
 func getTaskRunObject(ns string) objects.TektonObject {
-	o := objects.NewTaskRunObject(&imageTaskRun)
+	trV1 := &v1.TaskRun{}
+	imageTaskRun.ConvertTo(context.Background(), trV1)
+	o := objects.NewTaskRunObjectV1(trV1)
 	o.Namespace = ns
 	return o
 }
 
-func getTaskRunObjectWithParams(ns string, params []v1beta1.Param) objects.TektonObject {
-	o := objects.NewTaskRunObject(&imageTaskRun)
+func getTaskRunObjectWithParams(ns string, params []v1.Param) objects.TektonObject {
+	trV1 := &v1.TaskRun{}
+	imageTaskRun.ConvertTo(context.Background(), trV1)
+	o := objects.NewTaskRunObjectV1(trV1)
 	o.Namespace = ns
 	o.Spec.Params = params
 	return o
 }
 
-var imagePipelineRun = v1beta1.PipelineRun{
+func taskRunFromFile(f string) (*v1.TaskRun, error) {
+	contents, err := os.ReadFile(f)
+	if err != nil {
+		return nil, err
+	}
+	var tr v1.TaskRun
+	if err := json.Unmarshal(contents, &tr); err != nil {
+		return nil, err
+	}
+	return &tr, nil
+}
+
+func getTaskRunObjectV1(ns string) objects.TektonObject {
+	tr, _ := taskRunFromFile("testdata/type-hinting/taskrun.json")
+	o := objects.NewTaskRunObjectV1(tr)
+	o.Namespace = ns
+	return o
+}
+
+var imagePipelineRun = v1.PipelineRun{
 	ObjectMeta: metav1.ObjectMeta{
 		GenerateName: "image-pipelinerun",
 		Annotations:  map[string]string{chains.RekorAnnotation: "true"},
 	},
-	Spec: v1beta1.PipelineRunSpec{
-		PipelineSpec: &v1beta1.PipelineSpec{
-			Tasks: []v1beta1.PipelineTask{{
+	Spec: v1.PipelineRunSpec{
+		PipelineSpec: &v1.PipelineSpec{
+			Tasks: []v1.PipelineTask{{
 				Name: "echo",
-				TaskSpec: &v1beta1.EmbeddedTask{
-					TaskSpec: v1beta1.TaskSpec{
-						Steps: []v1beta1.Step{
+				TaskSpec: &v1.EmbeddedTask{
+					TaskSpec: v1.TaskSpec{
+						Steps: []v1.Step{
 							{
 								Image:  "busybox",
 								Script: "echo success",
@@ -671,13 +744,13 @@ var imagePipelineRun = v1beta1.PipelineRun{
 }
 
 func getPipelineRunObject(ns string) objects.TektonObject {
-	o := objects.NewPipelineRunObject(&imagePipelineRun)
+	o := objects.NewPipelineRunObjectV1(&imagePipelineRun)
 	o.Namespace = ns
 	return o
 }
 
-func getPipelineRunObjectWithParams(ns string, params []v1beta1.Param) objects.TektonObject {
-	o := objects.NewPipelineRunObject(&imagePipelineRun)
+func getPipelineRunObjectWithParams(ns string, params []v1.Param) objects.TektonObject {
+	o := objects.NewPipelineRunObjectV1(&imagePipelineRun)
 	o.Namespace = ns
 	o.Spec.Params = params
 	return o
@@ -687,7 +760,7 @@ func TestProvenanceMaterials(t *testing.T) {
 	tests := []struct {
 		name                string
 		cm                  map[string]string
-		getObjectWithParams func(ns string, params []v1beta1.Param) objects.TektonObject
+		getObjectWithParams func(ns string, params []v1.Param) objects.TektonObject
 		payloadKey          string
 	}{
 		{
@@ -724,10 +797,10 @@ func TestProvenanceMaterials(t *testing.T) {
 
 			commit := "my-git-commit"
 			url := "https://my-git-url"
-			params := []v1beta1.Param{{
-				Name: "CHAINS-GIT_COMMIT", Value: *v1beta1.NewArrayOrString(commit),
+			params := []v1.Param{{
+				Name: "CHAINS-GIT_COMMIT", Value: *v1.NewStructuredValues(commit),
 			}, {
-				Name: "CHAINS-GIT_URL", Value: *v1beta1.NewArrayOrString(url),
+				Name: "CHAINS-GIT_URL", Value: *v1.NewStructuredValues(url),
 			}}
 			obj := test.getObjectWithParams(ns, params)
 
@@ -751,11 +824,16 @@ func TestProvenanceMaterials(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			}
-			var actualProvenance in_toto.Statement
+			var actualProvenance intoto.Statement
 			if err := json.Unmarshal(bodyBytes, &actualProvenance); err != nil {
 				t.Error(err)
 			}
-			predicateBytes, err := json.Marshal(actualProvenance.Predicate)
+
+			predicateBytes, err := protojson.Marshal(actualProvenance.Predicate)
+			if err != nil {
+				t.Fatal(err)
+			}
+
 			if err := json.Unmarshal(bodyBytes, &actualProvenance); err != nil {
 				t.Error(err)
 			}
@@ -765,23 +843,38 @@ func TestProvenanceMaterials(t *testing.T) {
 			}
 			want := []provenance.ProvenanceMaterial{
 				{
-					URI: "git+" + url + ".git",
+					URI: artifacts.GitSchemePrefix + url + ".git",
 					Digest: provenance.DigestSet{
 						"sha1": commit,
 					},
 				},
 			}
+
 			if test.name == "pipelinerun" {
-				pr := signedObj.GetObject().(*v1beta1.PipelineRun)
-				for _, trStatus := range pr.Status.TaskRuns {
-					for _, step := range trStatus.Status.Steps {
+				pr := signedObj.GetObject().(*v1.PipelineRun)
+				for _, cr := range pr.Status.ChildReferences {
+					taskRun, err := c.PipelineClient.TektonV1().TaskRuns(ns).Get(ctx, cr.Name, metav1.GetOptions{})
+					if err != nil {
+						t.Errorf("Did not expect an error but got %v", err)
+					}
+					for _, step := range taskRun.Status.Steps {
 						want = append(want, provenance.ProvenanceMaterial{
-							URI: strings.Split(step.ImageID, "@")[0],
+							URI: artifacts.OCIScheme + "" + strings.Split(step.ImageID, "@")[0],
 							Digest: provenance.DigestSet{
 								"sha256": strings.Split(step.ImageID, ":")[1],
 							},
 						})
 					}
+				}
+			} else {
+				tr := signedObj.GetObject().(*v1.TaskRun)
+				for _, step := range tr.Status.Steps {
+					want = append(want, provenance.ProvenanceMaterial{
+						URI: artifacts.OCIScheme + "" + strings.Split(step.ImageID, "@")[0],
+						Digest: provenance.DigestSet{
+							"sha256": strings.Split(step.ImageID, ":")[1],
+						},
+					})
 				}
 			}
 			got := predicate.Materials
@@ -797,8 +890,18 @@ func TestProvenanceMaterials(t *testing.T) {
 }
 
 func TestVaultKMSSpire(t *testing.T) {
+	OPENSHIFT := os.Getenv("OPENSHIFT")
+	if OPENSHIFT == localhost {
+		t.Skip("Skipping, vault kms spire integration tests .")
+	}
 	ctx := logtesting.TestContextWithLogger(t)
 	c, ns, cleanup := setup(ctx, t, setupOpts{})
+	if OPENSHIFT == localhost {
+		if err := assignSCC(ns); err != nil {
+			t.Fatalf("error creating scc: %s", err)
+		}
+	}
+
 	t.Cleanup(cleanup)
 
 	resetConfig := setConfigMap(ctx, t, c, map[string]string{

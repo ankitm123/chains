@@ -22,6 +22,7 @@ import (
 	fakepipelineclient "github.com/tektoncd/pipeline/pkg/client/injection/client/fake"
 	"k8s.io/apimachinery/pkg/util/sets"
 	fakekubeclient "knative.dev/pkg/client/injection/kube/client/fake"
+	"knative.dev/pkg/logging"
 	logtesting "knative.dev/pkg/logging/testing"
 	rtesting "knative.dev/pkg/reconciler/testing"
 )
@@ -40,47 +41,47 @@ func TestInitializeBackends(t *testing.T) {
 		{
 			name: "tekton",
 			want: []string{"tekton"},
-			cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.NewString("tekton")}}},
+			cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.New[string]("tekton")}}},
 		},
 		// TODO: Re-enable this test when it doesn't rely on ambient GCP credentials.
 		//{
 		//	name: "gcs",
 		//	want: []string{"gcs"},
-		//	cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.NewString("gcs")}}},
+		//	cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.New[string]("gcs")}}},
 		//},
 		{
 			name: "oci",
 			want: []string{"oci"},
-			cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.NewString("oci")}}},
+			cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.New[string]("oci")}}},
 		},
 		// TODO: Re-enable this test when it doesn't rely on ambient GCP credentials.
 		// {
 		// 	name: "grafeas",
 		// 	want: []string{"grafeas"},
-		// 	cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.NewString("grafeas")}}},
+		// 	cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.New[string]("grafeas")}}},
 		// },
 		{
 			name: "multi",
 			want: []string{"oci", "tekton"},
-			cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.NewString("oci", "tekton")}}},
+			cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.New[string]("oci", "tekton")}}},
 		},
 		{
 			name: "pubsub",
 			want: []string{"pubsub"},
-			cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.NewString("pubsub")}}}},
+			cfg:  config.Config{Artifacts: config.ArtifactConfigs{TaskRuns: config.Artifact{StorageBackend: sets.New[string]("pubsub")}}}},
 	}
-	logger := logtesting.TestLogger(t)
 	ctx, _ := rtesting.SetupFakeContext(t)
 	ps := fakepipelineclient.Get(ctx)
 	kc := fakekubeclient.Get(ctx)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := InitializeBackends(ctx, ps, kc, logger, tt.cfg)
+			ctx := logging.WithLogger(ctx, logtesting.TestLogger(t))
+			got, err := InitializeBackends(ctx, ps, kc, tt.cfg)
 			if err != nil {
 				t.Errorf("InitializeBackends() error = %v", err)
 				return
 			}
-			logger.Debugf("Backend: %v", got)
+			t.Logf("Backend: %v", got)
 			gotTypes := []string{}
 			for _, g := range got {
 				gotTypes = append(gotTypes, g.Type())

@@ -25,11 +25,15 @@ import (
 	"github.com/tektoncd/chains/pkg/chains/formats/simple"
 	"github.com/tektoncd/chains/pkg/chains/objects"
 	"github.com/tektoncd/chains/pkg/config"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	intoto "github.com/in-toto/attestation/go/v1"
 	"github.com/in-toto/in-toto-golang/in_toto"
+
+	"github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
 	slsa "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
@@ -42,13 +46,13 @@ import (
 const namespace = "oci-test"
 
 var (
-	tr = &v1beta1.TaskRun{
+	tr = &v1beta1.TaskRun{ //nolint:staticcheck
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo",
 			Namespace: namespace,
 		},
 	}
-	pr = &v1beta1.PipelineRun{
+	pr = &v1beta1.PipelineRun{ //nolint:staticcheck
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo",
 			Namespace: namespace,
@@ -57,8 +61,6 @@ var (
 )
 
 func TestBackend_StorePayload(t *testing.T) {
-	ctx := context.Background()
-
 	// Create registry server
 	s := httptest.NewServer(registry.New())
 	defer s.Close()
@@ -85,20 +87,18 @@ func TestBackend_StorePayload(t *testing.T) {
 		},
 	}
 
-	intotoStatement := in_toto.ProvenanceStatement{
-		StatementHeader: in_toto.StatementHeader{
-			Type:          in_toto.StatementInTotoV01,
-			PredicateType: slsa.PredicateSLSAProvenance,
-			Subject: []in_toto.Subject{
-				{
-					Name: u.Host + "/task/" + tr.Name,
-					Digest: slsa.DigestSet{
-						algo: hex,
-					},
+	intotoStatement := &intoto.Statement{
+		Type:          in_toto.StatementInTotoV01,
+		PredicateType: slsa.PredicateSLSAProvenance,
+		Subject: []*intoto.ResourceDescriptor{
+			{
+				Name: u.Host + "/task/" + tr.Name,
+				Digest: common.DigestSet{
+					algo: hex,
 				},
 			},
 		},
-		Predicate: slsa.ProvenancePredicate{},
+		Predicate: &structpb.Struct{},
 	}
 
 	type fields struct {
@@ -117,7 +117,7 @@ func TestBackend_StorePayload(t *testing.T) {
 	}{{
 		name: "simplesigning payload",
 		fields: fields{
-			object: objects.NewTaskRunObject(tr),
+			object: objects.NewTaskRunObjectV1Beta1(tr),
 		},
 		args: args{
 			payload:   simple,
@@ -130,7 +130,7 @@ func TestBackend_StorePayload(t *testing.T) {
 	}, {
 		name: "into-to payload",
 		fields: fields{
-			object: objects.NewTaskRunObject(tr),
+			object: objects.NewTaskRunObjectV1Beta1(tr),
 		},
 		args: args{
 			payload:   intotoStatement,
@@ -143,10 +143,10 @@ func TestBackend_StorePayload(t *testing.T) {
 	}, {
 		name: "no subject",
 		fields: fields{
-			object: objects.NewTaskRunObject(tr),
+			object: objects.NewTaskRunObjectV1Beta1(tr),
 		},
 		args: args{
-			payload:   in_toto.Statement{},
+			payload:   intoto.Statement{},
 			signature: "",
 			storageOpts: config.StorageOpts{
 				PayloadFormat: formats.PayloadTypeSlsav1,
@@ -156,7 +156,7 @@ func TestBackend_StorePayload(t *testing.T) {
 	}, {
 		name: "simplesigning payload",
 		fields: fields{
-			object: objects.NewPipelineRunObject(pr),
+			object: objects.NewPipelineRunObjectV1Beta1(pr),
 		},
 		args: args{
 			payload:   simple,
@@ -169,7 +169,7 @@ func TestBackend_StorePayload(t *testing.T) {
 	}, {
 		name: "into-to payload",
 		fields: fields{
-			object: objects.NewPipelineRunObject(pr),
+			object: objects.NewPipelineRunObjectV1Beta1(pr),
 		},
 		args: args{
 			payload:   intotoStatement,
@@ -182,7 +182,7 @@ func TestBackend_StorePayload(t *testing.T) {
 	}, {
 		name: "in-toto-and-simple-payload",
 		fields: fields{
-			object: objects.NewTaskRunObject(tr),
+			object: objects.NewTaskRunObjectV1Beta1(tr),
 		},
 		args: args{
 			payload:   simple,
@@ -195,7 +195,7 @@ func TestBackend_StorePayload(t *testing.T) {
 	}, {
 		name: "tekton-and-simple-payload",
 		fields: fields{
-			object: objects.NewTaskRunObject(tr),
+			object: objects.NewTaskRunObjectV1Beta1(tr),
 		},
 		args: args{
 			payload:   simple,
@@ -208,10 +208,10 @@ func TestBackend_StorePayload(t *testing.T) {
 	}, {
 		name: "no subject",
 		fields: fields{
-			object: objects.NewPipelineRunObject(pr),
+			object: objects.NewPipelineRunObjectV1Beta1(pr),
 		},
 		args: args{
-			payload:   in_toto.Statement{},
+			payload:   intoto.Statement{},
 			signature: "",
 			storageOpts: config.StorageOpts{
 				PayloadFormat: formats.PayloadTypeSlsav1,
@@ -222,8 +222,8 @@ func TestBackend_StorePayload(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := logtesting.TestContextWithLogger(t)
 			b := &Backend{
-				logger: logtesting.TestLogger(t),
 				getAuthenticator: func(context.Context, objects.TektonObject, kubernetes.Interface) (remote.Option, error) {
 					return remote.WithAuthFromKeychain(authn.DefaultKeychain), nil
 				},

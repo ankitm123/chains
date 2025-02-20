@@ -24,9 +24,12 @@ type HashAlgorithm string
 const (
 	KeyIDLength = sha256.Size * 2
 
-	KeyTypeEd25519           KeyType = "ed25519"
-	KeyTypeECDSA_SHA2_P256   KeyType = "ecdsa-sha2-nistp256"
-	KeyTypeRSASSA_PSS_SHA256 KeyType = "rsa"
+	KeyTypeEd25519 KeyType = "ed25519"
+	// From version 1.0.32, the reference implementation defines 'ecdsa',
+	// not 'ecdsa-sha2-nistp256' for NIST P-256 curves.
+	KeyTypeECDSA_SHA2_P256         KeyType = "ecdsa"
+	KeyTypeECDSA_SHA2_P256_OLD_FMT KeyType = "ecdsa-sha2-nistp256"
+	KeyTypeRSASSA_PSS_SHA256       KeyType = "rsa"
 
 	KeySchemeEd25519           KeyScheme = "ed25519"
 	KeySchemeECDSA_SHA2_P256   KeyScheme = "ecdsa-sha2-nistp256"
@@ -172,11 +175,14 @@ func (f Hashes) HashAlgorithms() []string {
 }
 
 type metapathFileMeta struct {
-	Length  int64  `json:"length,omitempty"`
-	Hashes  Hashes `json:"hashes,omitempty"`
-	Version int64  `json:"version"`
+	Length  int64            `json:"length,omitempty"`
+	Hashes  Hashes           `json:"hashes,omitempty"`
+	Version int64            `json:"version"`
+	Custom  *json.RawMessage `json:"custom,omitempty"`
 }
 
+// SnapshotFileMeta is the meta field of a snapshot
+// Note: Contains a `custom` field
 type SnapshotFileMeta metapathFileMeta
 
 type SnapshotFiles map[string]SnapshotFileMeta

@@ -24,39 +24,36 @@ import (
 	pb "github.com/grafeas/grafeas/proto/v1/grafeas_go_proto"
 	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/pkg/errors"
-	"github.com/sigstore/cosign/pkg/types"
+	"github.com/sigstore/cosign/v2/pkg/types"
 	"github.com/tektoncd/chains/pkg/chains/formats"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/extract"
 	"github.com/tektoncd/chains/pkg/chains/objects"
 	"github.com/tektoncd/chains/pkg/config"
-	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/oauth"
 	"google.golang.org/grpc/status"
+	"knative.dev/pkg/logging"
 )
 
 const (
-	StorageBackendGrafeas          = "grafeas"
-	projectPathFormat              = "projects/%s"
-	notePathFormat                 = "projects/%s/notes/%s"
-	attestationNoteNameFormat      = "%s-simplesigning"
-	pipelinerunBuildNoteNameFormat = "%s-pipelinerun-intoto"
-	taskrunBuildNoteNameFormat     = "%s-taskrun-intoto"
+	StorageBackendGrafeas     = "grafeas"
+	projectPathFormat         = "projects/%s"
+	notePathFormat            = "projects/%s/notes/%s"
+	attestationNoteNameFormat = "%s-simplesigning"
+	buildNoteNameFormat       = "%s-%s-intoto"
 )
 
 // Backend is a storage backend that stores signed payloads in the storage that
 // is built on the top of grafeas i.e. container analysis.
 type Backend struct {
-	logger *zap.SugaredLogger
 	client pb.GrafeasClient
 	cfg    config.Config
 }
 
 // NewStorageBackend returns a new Grafeas StorageBackend that stores signatures in a Grafeas server
-func NewStorageBackend(ctx context.Context, logger *zap.SugaredLogger, cfg config.Config) (*Backend, error) {
+func NewStorageBackend(ctx context.Context, cfg config.Config) (*Backend, error) {
 	// build connection through grpc
 	// implicit uses Application Default Credentials to authenticate.
 	// Requires `gcloud auth application-default login` to work locally
@@ -81,7 +78,6 @@ func NewStorageBackend(ctx context.Context, logger *zap.SugaredLogger, cfg confi
 
 	// create backend instance
 	return &Backend{
-		logger: logger,
 		client: client,
 		cfg:    cfg,
 	}, nil
@@ -89,6 +85,7 @@ func NewStorageBackend(ctx context.Context, logger *zap.SugaredLogger, cfg confi
 
 // StorePayload implements the storage.Backend interface.
 func (b *Backend) StorePayload(ctx context.Context, obj objects.TektonObject, rawPayload []byte, signature string, opts config.StorageOpts) error {
+	logger := logging.FromContext(ctx)
 	// We only support simplesigning for OCI images, and in-toto for taskrun & pipelinerun.
 	if _, ok := formats.IntotoAttestationSet[opts.PayloadFormat]; !ok && opts.PayloadFormat != formats.PayloadTypeSimpleSigning {
 		return errors.New("Grafeas storage backend only supports simplesigning and intoto payload format.")
@@ -123,9 +120,9 @@ func (b *Backend) StorePayload(ctx context.Context, obj objects.TektonObject, ra
 	}
 
 	if len(occNames) == 0 {
-		b.logger.Infof("No occurrences created for payload of type %s for %s %s/%s", string(opts.PayloadFormat), obj.GetGVK(), obj.GetNamespace(), obj.GetName())
+		logger.Infof("No occurrences created for payload of type %s for %s %s/%s", string(opts.PayloadFormat), obj.GetGVK(), obj.GetNamespace(), obj.GetName())
 	} else {
-		b.logger.Infof("Successfully created grafeas occurrences %v for %s %s/%s", occNames, obj.GetGVK(), obj.GetNamespace(), obj.GetName())
+		logger.Infof("Successfully created grafeas occurrences %v for %s %s/%s", occNames, obj.GetGVK(), obj.GetNamespace(), obj.GetName())
 	}
 
 	return nil
@@ -213,16 +210,7 @@ func (b *Backend) createNote(ctx context.Context, obj objects.TektonObject, opts
 		)
 	}
 
-	switch obj.GetObject().(type) {
-	case *v1beta1.PipelineRun:
-		// create the build note for pipelinerun attestations
-		return b.createBuildNote(ctx, fmt.Sprintf(pipelinerunBuildNoteNameFormat, notePrefix), obj)
-	case *v1beta1.TaskRun:
-		// create the build note for taskrun attestations
-		return b.createBuildNote(ctx, fmt.Sprintf(taskrunBuildNoteNameFormat, notePrefix), obj)
-	default:
-		return nil, errors.New("Tried to create build note for unsupported type of object")
-	}
+	return b.createBuildNote(ctx, fmt.Sprintf(buildNoteNameFormat, notePrefix, obj.GetKindName()), obj)
 }
 
 func (b *Backend) createBuildNote(ctx context.Context, noteid string, obj objects.TektonObject) (*pb.Note, error) {
@@ -265,7 +253,7 @@ func (b *Backend) createOccurrence(ctx context.Context, obj objects.TektonObject
 	}
 
 	// create Occurrence_Build for TaskRun
-	allURIs := extract.RetrieveAllArtifactURIs(obj, b.logger)
+	allURIs := b.getAllArtifactURIs(ctx, opts.PayloadFormat, obj)
 	for _, uri := range allURIs {
 		occ, err := b.createBuildOccurrence(ctx, obj, payload, signature, uri)
 		if err != nil {
@@ -274,6 +262,22 @@ func (b *Backend) createOccurrence(ctx context.Context, obj objects.TektonObject
 		occs = append(occs, occ)
 	}
 	return occs, nil
+}
+
+func (b *Backend) getAllArtifactURIs(ctx context.Context, payloadFormat config.PayloadType, obj objects.TektonObject) []string {
+	logger := logging.FromContext(ctx)
+	payloader, err := formats.GetPayloader(payloadFormat, b.cfg)
+	if err != nil {
+		logger.Infof("couldn't get payloader for %v format, will use extract.RetrieveAllArtifactURIs method instead", payloadFormat)
+		return extract.RetrieveAllArtifactURIs(ctx, obj, b.cfg.Artifacts.PipelineRuns.DeepInspectionEnabled)
+	}
+
+	if uris, err := payloader.RetrieveAllArtifactURIs(ctx, obj); err == nil {
+		return uris
+	}
+
+	logger.Infof("couldn't get URIs from payloader %v, will use extract.RetrieveAllArtifactURIs method instead", payloadFormat)
+	return extract.RetrieveAllArtifactURIs(ctx, obj, b.cfg.Artifacts.PipelineRuns.DeepInspectionEnabled)
 }
 
 func (b *Backend) createAttestationOccurrence(ctx context.Context, payload []byte, signature string, uri string) (*pb.Occurrence, error) {
@@ -369,21 +373,14 @@ func (b *Backend) getAttestationNotePath() string {
 func (b *Backend) getBuildNotePath(obj objects.TektonObject) string {
 	projectID := b.cfg.Storage.Grafeas.ProjectID
 	noteID := b.cfg.Storage.Grafeas.NoteID
-
-	switch obj.GetObject().(type) {
-	case *v1beta1.PipelineRun:
-		return fmt.Sprintf(notePathFormat, projectID, fmt.Sprintf(pipelinerunBuildNoteNameFormat, noteID))
-	case *v1beta1.TaskRun:
-		return fmt.Sprintf(notePathFormat, projectID, fmt.Sprintf(taskrunBuildNoteNameFormat, noteID))
-	}
-	return ""
+	return fmt.Sprintf(notePathFormat, projectID, fmt.Sprintf(buildNoteNameFormat, noteID, obj.GetKindName()))
 }
 
 // getAllOccurrences retrieves back all occurrences created for a taskrun
 func (b *Backend) getAllOccurrences(ctx context.Context, obj objects.TektonObject, opts config.StorageOpts) ([]*pb.Occurrence, error) {
 	result := []*pb.Occurrence{}
 	// step 1: get all resource URIs created under the taskrun
-	uriFilters := extract.RetrieveAllArtifactURIs(obj, b.logger)
+	uriFilters := b.getAllArtifactURIs(ctx, opts.PayloadFormat, obj)
 
 	// step 2: find all build occurrences
 	if _, ok := formats.IntotoAttestationSet[opts.PayloadFormat]; ok {

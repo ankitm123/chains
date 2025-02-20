@@ -22,6 +22,7 @@ package pubkey
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -96,12 +97,19 @@ func (o *GetPublicKeyOK) IsCode(code int) bool {
 	return code == 200
 }
 
+// Code gets the status code for the get public key o k response
+func (o *GetPublicKeyOK) Code() int {
+	return 200
+}
+
 func (o *GetPublicKeyOK) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log/publicKey][%d] getPublicKeyOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/publicKey][%d] getPublicKeyOK %s", 200, payload)
 }
 
 func (o *GetPublicKeyOK) String() string {
-	return fmt.Sprintf("[GET /api/v1/log/publicKey][%d] getPublicKeyOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/publicKey][%d] getPublicKeyOK %s", 200, payload)
 }
 
 func (o *GetPublicKeyOK) GetPayload() string {
@@ -136,11 +144,6 @@ type GetPublicKeyDefault struct {
 	Payload *models.Error
 }
 
-// Code gets the status code for the get public key default response
-func (o *GetPublicKeyDefault) Code() int {
-	return o._statusCode
-}
-
 // IsSuccess returns true when this get public key default response has a 2xx status code
 func (o *GetPublicKeyDefault) IsSuccess() bool {
 	return o._statusCode/100 == 2
@@ -166,12 +169,19 @@ func (o *GetPublicKeyDefault) IsCode(code int) bool {
 	return o._statusCode == code
 }
 
+// Code gets the status code for the get public key default response
+func (o *GetPublicKeyDefault) Code() int {
+	return o._statusCode
+}
+
 func (o *GetPublicKeyDefault) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log/publicKey][%d] getPublicKey default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/publicKey][%d] getPublicKey default %s", o._statusCode, payload)
 }
 
 func (o *GetPublicKeyDefault) String() string {
-	return fmt.Sprintf("[GET /api/v1/log/publicKey][%d] getPublicKey default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/publicKey][%d] getPublicKey default %s", o._statusCode, payload)
 }
 
 func (o *GetPublicKeyDefault) GetPayload() *models.Error {

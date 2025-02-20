@@ -19,7 +19,7 @@ import (
 	"log"
 	"testing"
 
-	"github.com/in-toto/in-toto-golang/in_toto"
+	intoto "github.com/in-toto/attestation/go/v1"
 	"github.com/tektoncd/chains/pkg/chains/formats"
 	"github.com/tektoncd/chains/pkg/chains/objects"
 	"github.com/tektoncd/chains/pkg/config"
@@ -32,11 +32,14 @@ import (
 
 func TestBackend_StorePayload(t *testing.T) {
 	// pretty much anything that has no Subject
-	sampleIntotoStatementBytes, _ := json.Marshal(in_toto.Statement{})
+	sampleIntotoStatementBytes, err := json.Marshal(intoto.Statement{})
+	if err != nil {
+		t.Fatalf("error getting statement: %v", err)
+	}
 	logger := logtesting.TestLogger(t)
 
 	type fields struct {
-		tr  *v1beta1.TaskRun
+		tr  *v1beta1.TaskRun //nolint:staticcheck
 		cfg config.Config
 	}
 	type args struct {
@@ -53,7 +56,7 @@ func TestBackend_StorePayload(t *testing.T) {
 		{
 			name: "no subject",
 			fields: fields{
-				tr: &v1beta1.TaskRun{
+				tr: &v1beta1.TaskRun{ //nolint:staticcheck
 					ObjectMeta: v1.ObjectMeta{
 						Name:      "foo",
 						Namespace: "bar",
@@ -82,8 +85,7 @@ func TestBackend_StorePayload(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := &Backend{
-				logger: logger,
-				cfg:    tt.fields.cfg,
+				cfg: tt.fields.cfg,
 			}
 			addr := fmt.Sprintf("mem://%s", tt.fields.cfg.Storage.PubSub.Topic)
 			ctx, _ := rtesting.SetupFakeContext(t)
@@ -110,7 +112,7 @@ func TestBackend_StorePayload(t *testing.T) {
 				}
 			}()
 
-			trObj := objects.NewTaskRunObject(tt.fields.tr)
+			trObj := objects.NewTaskRunObjectV1Beta1(tt.fields.tr)
 			// Store the payload.
 			if err := b.StorePayload(ctx, trObj, tt.args.rawPayload, tt.args.signature, tt.args.storageOpts); (err != nil) != tt.wantErr {
 				t.Errorf("Backend.StorePayload() error = %v, wantErr %v", err, tt.wantErr)

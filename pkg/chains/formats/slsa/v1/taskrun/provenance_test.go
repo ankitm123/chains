@@ -22,18 +22,22 @@ import (
 	"testing"
 	"time"
 
+	intoto "github.com/in-toto/attestation/go/v1"
+	"github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
 	slsa "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
+	"google.golang.org/protobuf/testing/protocmp"
 
-	"github.com/ghodss/yaml"
 	"github.com/google/go-cmp/cmp"
-	"github.com/in-toto/in-toto-golang/in_toto"
+	"github.com/tektoncd/chains/internal/backport"
 	"github.com/tektoncd/chains/pkg/artifacts"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/extract"
+	"github.com/tektoncd/chains/pkg/chains/formats/slsa/internal/compare"
 	"github.com/tektoncd/chains/pkg/chains/objects"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/pipeline/pkg/apis/resource/v1alpha1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logtesting "knative.dev/pkg/logging/testing"
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -45,8 +49,8 @@ const (
 )
 
 func TestMetadata(t *testing.T) {
-	tr := &v1beta1.TaskRun{
-		ObjectMeta: v1.ObjectMeta{
+	tr := &v1beta1.TaskRun{ //nolint:staticcheck
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-taskrun",
 			Namespace: "my-namespace",
 			Annotations: map[string]string{
@@ -55,8 +59,8 @@ func TestMetadata(t *testing.T) {
 		},
 		Status: v1beta1.TaskRunStatus{
 			TaskRunStatusFields: v1beta1.TaskRunStatusFields{
-				StartTime:      &v1.Time{Time: time.Date(1995, time.December, 24, 6, 12, 12, 12, time.UTC)},
-				CompletionTime: &v1.Time{Time: time.Date(1995, time.December, 24, 6, 12, 12, 24, time.UTC)},
+				StartTime:      &metav1.Time{Time: time.Date(1995, time.December, 24, 6, 12, 12, 12, time.UTC)},
+				CompletionTime: &metav1.Time{Time: time.Date(1995, time.December, 24, 6, 12, 12, 24, time.UTC)},
 			},
 		},
 	}
@@ -66,7 +70,7 @@ func TestMetadata(t *testing.T) {
 		BuildStartedOn:  &start,
 		BuildFinishedOn: &end,
 	}
-	got := Metadata(objects.NewTaskRunObject(tr))
+	got := Metadata(objects.NewTaskRunObjectV1Beta1(tr))
 	if !reflect.DeepEqual(expected, got) {
 		t.Fatalf("expected %v got %v", expected, got)
 	}
@@ -74,8 +78,8 @@ func TestMetadata(t *testing.T) {
 
 func TestMetadataInTimeZone(t *testing.T) {
 	tz := time.FixedZone("Test Time", int((12 * time.Hour).Seconds()))
-	tr := &v1beta1.TaskRun{
-		ObjectMeta: v1.ObjectMeta{
+	tr := &v1beta1.TaskRun{ //nolint:staticcheck
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-taskrun",
 			Namespace: "my-namespace",
 			Annotations: map[string]string{
@@ -84,8 +88,8 @@ func TestMetadataInTimeZone(t *testing.T) {
 		},
 		Status: v1beta1.TaskRunStatus{
 			TaskRunStatusFields: v1beta1.TaskRunStatusFields{
-				StartTime:      &v1.Time{Time: time.Date(1995, time.December, 24, 6, 12, 12, 12, tz)},
-				CompletionTime: &v1.Time{Time: time.Date(1995, time.December, 24, 6, 12, 12, 24, tz)},
+				StartTime:      &metav1.Time{Time: time.Date(1995, time.December, 24, 6, 12, 12, 12, tz)},
+				CompletionTime: &metav1.Time{Time: time.Date(1995, time.December, 24, 6, 12, 12, 24, tz)},
 			},
 		},
 	}
@@ -95,7 +99,7 @@ func TestMetadataInTimeZone(t *testing.T) {
 		BuildStartedOn:  &start,
 		BuildFinishedOn: &end,
 	}
-	got := Metadata(objects.NewTaskRunObject(tr))
+	got := Metadata(objects.NewTaskRunObjectV1Beta1(tr))
 	if !reflect.DeepEqual(expected, got) {
 		t.Fatalf("expected %v got %v", expected, got)
 	}
@@ -158,13 +162,13 @@ status:
       default: []
 `
 
-	var taskRun *v1beta1.TaskRun
+	var taskRun *v1beta1.TaskRun //nolint:staticcheck
 	if err := yaml.Unmarshal([]byte(taskrun), &taskRun); err != nil {
 		t.Fatal(err)
 	}
 
 	expected := slsa.ProvenanceInvocation{
-		Parameters: map[string]v1beta1.ArrayOrString{
+		Parameters: map[string]v1beta1.ParamValue{
 			"my-param":                      {Type: "string", StringVal: "string-param"},
 			"my-array-param":                {Type: "array", ArrayVal: []string{"my", "array"}},
 			"my-default-param":              {Type: "string", StringVal: "string-default-param"},
@@ -186,7 +190,7 @@ status:
 		},
 	}
 
-	got := invocation(objects.NewTaskRunObject(taskRun))
+	got := invocation(objects.NewTaskRunObjectV1Beta1(taskRun))
 	if !reflect.DeepEqual(expected, got) {
 		if d := cmp.Diff(expected, got); d != "" {
 			t.Log(d)
@@ -196,19 +200,19 @@ status:
 }
 
 func TestGetSubjectDigests(t *testing.T) {
-	tr := &v1beta1.TaskRun{
+	tr := &v1beta1.TaskRun{ //nolint:staticcheck
 		Spec: v1beta1.TaskRunSpec{
-			Resources: &v1beta1.TaskRunResources{
-				Outputs: []v1beta1.TaskResourceBinding{
+			Resources: &v1beta1.TaskRunResources{ //nolint:staticcheck
+				Outputs: []v1beta1.TaskResourceBinding{ //nolint:staticcheck
 					{
-						PipelineResourceBinding: v1beta1.PipelineResourceBinding{
+						PipelineResourceBinding: v1beta1.PipelineResourceBinding{ //nolint:staticcheck
 							Name: "nil-check",
 						},
 					}, {
-						PipelineResourceBinding: v1beta1.PipelineResourceBinding{
+						PipelineResourceBinding: v1beta1.PipelineResourceBinding{ //nolint:staticcheck
 							Name: "built-image",
-							ResourceSpec: &v1alpha1.PipelineResourceSpec{
-								Type: v1alpha1.PipelineResourceTypeImage,
+							ResourceSpec: &v1alpha1.PipelineResourceSpec{ //nolint:staticcheck
+								Type: backport.PipelineResourceTypeImage,
 							},
 						},
 					},
@@ -220,39 +224,39 @@ func TestGetSubjectDigests(t *testing.T) {
 				TaskRunResults: []v1beta1.TaskRunResult{
 					{
 						Name:  "IMAGE_URL",
-						Value: *v1beta1.NewArrayOrString("registry/myimage"),
+						Value: *v1beta1.NewStructuredValues("registry/myimage"),
 					},
 					{
 						Name:  "IMAGE_DIGEST",
-						Value: *v1beta1.NewArrayOrString(digest1),
+						Value: *v1beta1.NewStructuredValues(digest1),
 					},
 					{
 						Name:  "mvn1_ARTIFACT_URI",
-						Value: *v1beta1.NewArrayOrString("maven-test-0.1.1.jar"),
+						Value: *v1beta1.NewStructuredValues("maven-test-0.1.1.jar"),
 					},
 					{
 						Name:  "mvn1_ARTIFACT_DIGEST",
-						Value: *v1beta1.NewArrayOrString(digest3),
+						Value: *v1beta1.NewStructuredValues(digest3),
 					},
 					{
 						Name:  "mvn1_pom_ARTIFACT_URI",
-						Value: *v1beta1.NewArrayOrString("maven-test-0.1.1.pom"),
+						Value: *v1beta1.NewStructuredValues("maven-test-0.1.1.pom"),
 					},
 					{
 						Name:  "mvn1_pom_ARTIFACT_DIGEST",
-						Value: *v1beta1.NewArrayOrString(digest4),
+						Value: *v1beta1.NewStructuredValues(digest4),
 					},
 					{
 						Name:  "mvn1_src_ARTIFACT_URI",
-						Value: *v1beta1.NewArrayOrString("maven-test-0.1.1-sources.jar"),
+						Value: *v1beta1.NewStructuredValues("maven-test-0.1.1-sources.jar"),
 					},
 					{
 						Name:  "mvn1_src_ARTIFACT_DIGEST",
-						Value: *v1beta1.NewArrayOrString(digest5),
+						Value: *v1beta1.NewStructuredValues(digest5),
 					},
 					{
 						Name:  "invalid_ARTIFACT_DIGEST",
-						Value: *v1beta1.NewArrayOrString(digest5),
+						Value: *v1beta1.NewStructuredValues(digest5),
 					},
 					{
 						Name: "mvn1_pkg" + "-" + artifacts.ArtifactsOutputsResultName,
@@ -291,50 +295,49 @@ func TestGetSubjectDigests(t *testing.T) {
 		},
 	}
 
-	expected := []in_toto.Subject{
+	want := []*intoto.ResourceDescriptor{
 		{
 			Name: "com.google.guava:guava:1.0-jre.pom",
-			Digest: slsa.DigestSet{
+			Digest: common.DigestSet{
 				"sha256": strings.TrimPrefix(digest2, "sha256:"),
 			},
 		}, {
 			Name: "index.docker.io/registry/myimage",
-			Digest: slsa.DigestSet{
+			Digest: common.DigestSet{
 				"sha256": strings.TrimPrefix(digest1, "sha256:"),
 			},
 		}, {
 			Name: "maven-test-0.1.1-sources.jar",
-			Digest: slsa.DigestSet{
+			Digest: common.DigestSet{
 				"sha256": strings.TrimPrefix(digest5, "sha256:"),
 			},
 		}, {
 			Name: "maven-test-0.1.1.jar",
-			Digest: slsa.DigestSet{
+			Digest: common.DigestSet{
 				"sha256": strings.TrimPrefix(digest3, "sha256:"),
 			},
 		}, {
 			Name: "maven-test-0.1.1.pom",
-			Digest: slsa.DigestSet{
+			Digest: common.DigestSet{
 				"sha256": strings.TrimPrefix(digest4, "sha256:"),
 			},
 		}, {
 			Name: "projects/test-project-1/locations/us-west4/repositories/test-repo/mavenArtifacts/com.google.guava:guava:31.0-jre",
-			Digest: slsa.DigestSet{
+			Digest: common.DigestSet{
 				"sha256": strings.TrimPrefix(digest1, "sha256:"),
 			},
 		}, {
 			Name: "registry/resource-image",
-			Digest: slsa.DigestSet{
+			Digest: common.DigestSet{
 				"sha256": strings.TrimPrefix(digest2, "sha256:"),
 			},
 		},
 	}
-	tro := objects.NewTaskRunObject(tr)
-	got := extract.SubjectDigests(tro, logtesting.TestLogger(t))
-	if !reflect.DeepEqual(expected, got) {
-		if d := cmp.Diff(expected, got); d != "" {
-			t.Log(d)
-		}
-		t.Fatalf("expected \n%v\n got \n%v\n", expected, got)
+	ctx := logtesting.TestContextWithLogger(t)
+	tro := objects.NewTaskRunObjectV1Beta1(tr)
+	got := extract.SubjectDigests(ctx, tro, nil)
+
+	if d := cmp.Diff(want, got, compare.SubjectCompareOption(), protocmp.Transform()); d != "" {
+		t.Errorf("Wrong subjects extracted, diff=%s", d)
 	}
 }

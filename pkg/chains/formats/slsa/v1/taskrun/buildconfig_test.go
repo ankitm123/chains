@@ -20,11 +20,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ghodss/yaml"
 	"github.com/google/go-cmp/cmp"
+	"github.com/tektoncd/chains/pkg/artifacts"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/attest"
 	"github.com/tektoncd/chains/pkg/chains/objects"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	"sigs.k8s.io/yaml"
 )
 
 func TestBuildConfig(t *testing.T) {
@@ -58,7 +59,7 @@ status:
     terminated:
       containerID: containerd://e2fadd134495619cccd1c48d8a9df2aed2afd64e6c62ea55135f90796102231e`
 
-	var taskRun *v1beta1.TaskRun
+	var taskRun *v1beta1.TaskRun //nolint:staticcheck
 	if err := yaml.Unmarshal([]byte(taskrun), &taskRun); err != nil {
 		t.Fatal(err)
 	}
@@ -68,13 +69,13 @@ status:
 			{
 				EntryPoint: "",
 				Environment: map[string]interface{}{
-					"image":     "gcr.io/tekton-releases/github.com/tektoncd/pipeline/cmd/git-init@sha256:b963f6e7a69617db57b685893256f978436277094c21d43b153994acd8a01247",
+					"image":     artifacts.OCIScheme + "gcr.io/tekton-releases/github.com/tektoncd/pipeline/cmd/git-init@sha256:b963f6e7a69617db57b685893256f978436277094c21d43b153994acd8a01247",
 					"container": "git-source-repo-jwqcl",
 				},
 				Arguments: interface{}([]string(nil)),
 			}, {
 				Environment: map[string]interface{}{
-					"image":     "gcr.io/cloud-marketplace-containers/google/bazel@sha256:010a1ecd1a8c3610f12039a25b823e3a17bd3e8ae455a53e340dcfdd37a49964",
+					"image":     artifacts.OCIScheme + "gcr.io/cloud-marketplace-containers/google/bazel@sha256:010a1ecd1a8c3610f12039a25b823e3a17bd3e8ae455a53e340dcfdd37a49964",
 					"container": "build",
 				},
 				EntryPoint: "myscript\n",
@@ -83,7 +84,7 @@ status:
 		},
 	}
 
-	got := buildConfig(objects.NewTaskRunObject(taskRun))
+	got := buildConfig(objects.NewTaskRunObjectV1Beta1(taskRun))
 	if !reflect.DeepEqual(expected, got) {
 		if d := cmp.Diff(expected, got); d != "" {
 			t.Log(d)

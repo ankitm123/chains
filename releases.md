@@ -14,7 +14,7 @@ follows:
   - The first Tekton Chains LTS release will be **v0.13.0** in October 2022
 
 Tekton Chains produces nightly builds, publicly available on
-`gcr.io/tekton-nightly`.
+[ghcr.io/tektoncd/chains/controller-92006fd957c0afd31de6a40b3e33b39f](https://github.com/tektoncd/chains/pkgs/container/chains%2Fcontroller-92006fd957c0afd31de6a40b3e33b39f).
 
 ### Transition Process
 
@@ -38,36 +38,92 @@ Further documentation available:
 - [Installing Tekton][tekton-installation]
 - Standard for [release notes][release-notes-standards]
 
-## Releases
+## Backwards Incompatible Changes
 
-### v0.14
+In general we aim for new features to be added in a backwards compatible way,
+but sometimes we will need to make breaking changes. This policy outlines how we
+will make and communicate these.
 
-- **Latest Release**: [v0.14.0][v0-14-0] (2022-12-20)
-- **Initial Release**: [v0.14.0][v0-14-0] (2022-12-20)
-- **End of Life**: 2023-03-20
+**NOTE**: Tekton Chains is working towards a formal beta release. Until then,
+all features are technically considered `alpha` (though we continue to do our
+best to retain backwards compatibility).
 
-[v0-14-0]: https://github.com/tektoncd/chains/releases/tag/v0.14.0
+### Stability levels
 
-### v0.13 (LTS)
+| Stability Level | Deprecation Window                                       |
+| --------------- | -------------------------------------------------------- |
+| alpha           | none                                                     |
+| beta            | 3 months or 3 minor releases (which ever is longer)      |
+| stable          | 12 months or 3 LTS minor releases (which ever is longer) |
 
-- **Latest Release**: [v0.13.1][v0-13-1] (2022-12-20)
-- **Initial Release**: [v0.13.0][v0-13-0] (2022-11-08)
-- **End of Life**: 2023-11-08
+Example: if a beta feature is announced as deprecated in v0.10.0, it can be
+completely removed in v0.13.0.
 
-[v0-13-1]: https://github.com/tektoncd/chains/releases/tag/v0.13.1
-[v0-13-0]: https://github.com/tektoncd/chains/releases/tag/v0.13.0
+### What's in scope
 
-### v0.12
+- [User Configuration](docs/config.md)
+- Input mechanisms from Pipelines (e.g.
+  [Type Hinting](https://github.com/tektoncd/chains/blob/main/docs/config.md#chains-type-hinting))
+- Chains generated provenance output formats
+- Exported Client Libraries (https://pkg.go.dev/github.com/tektoncd/chains)
 
-- **Latest Release**: [v0.12.0][v0-12-0] (2022-08-31)
-- **Initial Release**: [v0.12.0][v0-12-0] (2022-08-31)
-- **End of Life**: 2022-12-30
+<!-- TODO(wlynch): if/when config type aliases are a thing, document policy around how these can change -->
 
-[v0-12-0]: https://github.com/tektoncd/chains/releases/tag/v0.12.0
+#### Exceptions
+
+We reserve the right to make breaking changes (regardless of stability level)
+under certain conditions:
+
+- Security
+
+  We will make breaking changes for security reasons (e.g. in response to CVEs
+  or other vulnerabilities) if necessary.
+
+- Backwards incompatible changes from dependencies
+
+  We try to keep Chains up-to-date with minor versions of its dependencies with
+  Dependabot. Chains assumes its dependencies adhere to
+  [Go module versioning](https://go.dev/doc/modules/developing#versioning) for
+  backwards compatibility. In cases where dependencies break this expectation,
+  we will try and work around these changes as best as we can and make breaking
+  changes as a last resort.
+
+  Example: If tektoncd/pipeline makes a breaking change to its client that
+  renders Chains unable to operate, we will update Chains to get things working
+  again even if it requires a breaking change to Chains config.
+
+### Deprecation Notice
+
+Deprecation notices will be included in
+[release notes](https://github.com/tektoncd/chains/releases). Any relevant
+deprecation window timers begin from when the release is published.
+
+## Current Releases
+
+### v0.24 (LTS)
+- **Latest Release**: [v0.24.0][v0-24-0] (2025-02-11)
+- **Initial Release**: [v0.24.0][v0-24-0] (2025-02-11)
+
+[v0-24-0]: https://github.com/tektoncd/chains/releases/tag/v0.24.0
+[v0-24-0]: https://github.com/tektoncd/chains/releases/tag/v0.24.0
+
+### v0.23 (LTS)
+- **Latest Release**: [v0.23.1][v0-23-1] (2025-01-21)
+- **Initial Release**: [v0.23.0][v0-23-0] (2024-11-06)
+
+[v0-23-0]: https://github.com/tektoncd/chains/releases/tag/v0.23.0
+[v0-23-1]: https://github.com/tektoncd/chains/releases/tag/v0.23.1
+
+### v0.22 (LTS)
+- **Latest Release**: [v0.22.3][v0-22-3] (2025-01-20)
+- **Initial Release**: [v0.22.0][v0-22-0] (2024-08-19)
+
+[v0-22-0]: https://github.com/tektoncd/chains/releases/tag/v0.22.0
+[v0-22-3]: https://github.com/tektoncd/chains/releases/tag/v0.22.3
 
 ## Older Releases
 
-Older releases are EOL and available on [GitHub][tekton-pipeline-releases].
+Older releases are EOL and available on [GitHub][tekton-chains-releases].
 
 [release-policy]: https://github.com/tektoncd/community/blob/main/releases.md
 [sigstore]: https://sigstore.dev

@@ -22,6 +22,7 @@ package entries
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -102,12 +103,19 @@ func (o *GetLogEntryByUUIDOK) IsCode(code int) bool {
 	return code == 200
 }
 
+// Code gets the status code for the get log entry by Uuid o k response
+func (o *GetLogEntryByUUIDOK) Code() int {
+	return 200
+}
+
 func (o *GetLogEntryByUUIDOK) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUuidOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUuidOK %s", 200, payload)
 }
 
 func (o *GetLogEntryByUUIDOK) String() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUuidOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUuidOK %s", 200, payload)
 }
 
 func (o *GetLogEntryByUUIDOK) GetPayload() models.LogEntry {
@@ -162,12 +170,17 @@ func (o *GetLogEntryByUUIDNotFound) IsCode(code int) bool {
 	return code == 404
 }
 
+// Code gets the status code for the get log entry by Uuid not found response
+func (o *GetLogEntryByUUIDNotFound) Code() int {
+	return 404
+}
+
 func (o *GetLogEntryByUUIDNotFound) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUuidNotFound ", 404)
+	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUuidNotFound", 404)
 }
 
 func (o *GetLogEntryByUUIDNotFound) String() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUuidNotFound ", 404)
+	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUuidNotFound", 404)
 }
 
 func (o *GetLogEntryByUUIDNotFound) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
@@ -191,11 +204,6 @@ type GetLogEntryByUUIDDefault struct {
 	_statusCode int
 
 	Payload *models.Error
-}
-
-// Code gets the status code for the get log entry by UUID default response
-func (o *GetLogEntryByUUIDDefault) Code() int {
-	return o._statusCode
 }
 
 // IsSuccess returns true when this get log entry by UUID default response has a 2xx status code
@@ -223,12 +231,19 @@ func (o *GetLogEntryByUUIDDefault) IsCode(code int) bool {
 	return o._statusCode == code
 }
 
+// Code gets the status code for the get log entry by UUID default response
+func (o *GetLogEntryByUUIDDefault) Code() int {
+	return o._statusCode
+}
+
 func (o *GetLogEntryByUUIDDefault) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUUID default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUUID default %s", o._statusCode, payload)
 }
 
 func (o *GetLogEntryByUUIDDefault) String() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUUID default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/entries/{entryUUID}][%d] getLogEntryByUUID default %s", o._statusCode, payload)
 }
 
 func (o *GetLogEntryByUUIDDefault) GetPayload() *models.Error {

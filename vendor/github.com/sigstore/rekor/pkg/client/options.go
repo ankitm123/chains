@@ -14,18 +14,36 @@
 
 package client
 
-import "net/http"
+import (
+	"net/http"
+	"time"
+
+	"github.com/hashicorp/go-retryablehttp"
+)
 
 // Option is a functional option for customizing static signatures.
 type Option func(*options)
 
 type options struct {
-	UserAgent string
+	UserAgent           string
+	RetryCount          uint
+	RetryWaitMin        time.Duration
+	RetryWaitMax        time.Duration
+	InsecureTLS         bool
+	Logger              interface{}
+	NoDisableKeepalives bool
+	Headers             map[string][]string
 }
+
+const (
+	// DefaultRetryCount is the default number of retries.
+	DefaultRetryCount = 3
+)
 
 func makeOptions(opts ...Option) *options {
 	o := &options{
-		UserAgent: "",
+		UserAgent:  "",
+		RetryCount: DefaultRetryCount,
 	}
 
 	for _, opt := range opts {
@@ -42,14 +60,72 @@ func WithUserAgent(userAgent string) Option {
 	}
 }
 
+// WithRetryCount sets the number of retries.
+func WithRetryCount(retryCount uint) Option {
+	return func(o *options) {
+		o.RetryCount = retryCount
+	}
+}
+
+// WithRetryWaitMin sets the minimum length of time to wait between retries.
+func WithRetryWaitMin(t time.Duration) Option {
+	return func(o *options) {
+		o.RetryWaitMin = t
+	}
+}
+
+// WithRetryWaitMax sets the minimum length of time to wait between retries.
+func WithRetryWaitMax(t time.Duration) Option {
+	return func(o *options) {
+		o.RetryWaitMax = t
+	}
+}
+
+// WithLogger sets the logger; it must implement either retryablehttp.Logger or retryablehttp.LeveledLogger; if not, this will not take effect.
+func WithLogger(logger interface{}) Option {
+	return func(o *options) {
+		switch logger.(type) {
+		case retryablehttp.Logger, retryablehttp.LeveledLogger:
+			o.Logger = logger
+		}
+	}
+}
+
+// WithInsecureTLS disables TLS verification.
+func WithInsecureTLS(enabled bool) Option {
+	return func(o *options) {
+		o.InsecureTLS = enabled
+	}
+}
+
+// WithNoDisableKeepalives unsets the default DisableKeepalives setting.
+func WithNoDisableKeepalives(noDisableKeepalives bool) Option {
+	return func(o *options) {
+		o.NoDisableKeepalives = noDisableKeepalives
+	}
+}
+
+// WithHeaders sets default headers for every client request.
+func WithHeaders(h map[string][]string) Option {
+	return func(o *options) {
+		o.Headers = h
+	}
+}
+
 type roundTripper struct {
 	http.RoundTripper
 	UserAgent string
+	Headers   map[string][]string
 }
 
 // RoundTrip implements `http.RoundTripper`
 func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.Header.Set("User-Agent", rt.UserAgent)
+	for k, v := range rt.Headers {
+		for _, h := range v {
+			req.Header.Add(k, h)
+		}
+	}
 	return rt.RoundTripper.RoundTrip(req)
 }
 
@@ -57,12 +133,13 @@ func createRoundTripper(inner http.RoundTripper, o *options) http.RoundTripper {
 	if inner == nil {
 		inner = http.DefaultTransport
 	}
-	if o.UserAgent == "" {
+	if o.UserAgent == "" && o.Headers == nil {
 		// There's nothing to do...
 		return inner
 	}
 	return &roundTripper{
 		RoundTripper: inner,
 		UserAgent:    o.UserAgent,
+		Headers:      o.Headers,
 	}
 }

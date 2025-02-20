@@ -22,6 +22,7 @@ package entries
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -120,12 +121,19 @@ func (o *CreateLogEntryCreated) IsCode(code int) bool {
 	return code == 201
 }
 
+// Code gets the status code for the create log entry created response
+func (o *CreateLogEntryCreated) Code() int {
+	return 201
+}
+
 func (o *CreateLogEntryCreated) Error() string {
-	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryCreated  %+v", 201, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryCreated %s", 201, payload)
 }
 
 func (o *CreateLogEntryCreated) String() string {
-	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryCreated  %+v", 201, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryCreated %s", 201, payload)
 }
 
 func (o *CreateLogEntryCreated) GetPayload() models.LogEntry {
@@ -199,12 +207,19 @@ func (o *CreateLogEntryBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the create log entry bad request response
+func (o *CreateLogEntryBadRequest) Code() int {
+	return 400
+}
+
 func (o *CreateLogEntryBadRequest) Error() string {
-	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryBadRequest %s", 400, payload)
 }
 
 func (o *CreateLogEntryBadRequest) String() string {
-	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryBadRequest  %+v", 400, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryBadRequest %s", 400, payload)
 }
 
 func (o *CreateLogEntryBadRequest) GetPayload() *models.Error {
@@ -264,12 +279,19 @@ func (o *CreateLogEntryConflict) IsCode(code int) bool {
 	return code == 409
 }
 
+// Code gets the status code for the create log entry conflict response
+func (o *CreateLogEntryConflict) Code() int {
+	return 409
+}
+
 func (o *CreateLogEntryConflict) Error() string {
-	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryConflict  %+v", 409, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryConflict %s", 409, payload)
 }
 
 func (o *CreateLogEntryConflict) String() string {
-	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryConflict  %+v", 409, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntryConflict %s", 409, payload)
 }
 
 func (o *CreateLogEntryConflict) GetPayload() *models.Error {
@@ -317,11 +339,6 @@ type CreateLogEntryDefault struct {
 	Payload *models.Error
 }
 
-// Code gets the status code for the create log entry default response
-func (o *CreateLogEntryDefault) Code() int {
-	return o._statusCode
-}
-
 // IsSuccess returns true when this create log entry default response has a 2xx status code
 func (o *CreateLogEntryDefault) IsSuccess() bool {
 	return o._statusCode/100 == 2
@@ -347,12 +364,19 @@ func (o *CreateLogEntryDefault) IsCode(code int) bool {
 	return o._statusCode == code
 }
 
+// Code gets the status code for the create log entry default response
+func (o *CreateLogEntryDefault) Code() int {
+	return o._statusCode
+}
+
 func (o *CreateLogEntryDefault) Error() string {
-	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntry default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntry default %s", o._statusCode, payload)
 }
 
 func (o *CreateLogEntryDefault) String() string {
-	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntry default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[POST /api/v1/log/entries][%d] createLogEntry default %s", o._statusCode, payload)
 }
 
 func (o *CreateLogEntryDefault) GetPayload() *models.Error {

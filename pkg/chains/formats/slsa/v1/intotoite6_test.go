@@ -20,28 +20,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tektoncd/chains/pkg/artifacts"
 	"github.com/tektoncd/chains/pkg/chains/formats"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/attest"
+	"github.com/tektoncd/chains/pkg/chains/formats/slsa/internal/compare"
+	"github.com/tektoncd/chains/pkg/chains/formats/slsa/v1/internal/protos"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/v1/pipelinerun"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/v1/taskrun"
 	"github.com/tektoncd/chains/pkg/chains/objects"
 	"github.com/tektoncd/chains/pkg/config"
 	"github.com/tektoncd/chains/pkg/internal/objectloader"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/google/go-cmp/cmp"
+	intoto "github.com/in-toto/attestation/go/v1"
 	"github.com/in-toto/in-toto-golang/in_toto"
+	"github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
 	slsa "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	logtesting "knative.dev/pkg/logging/testing"
 )
 
-var e1BuildStart = time.Unix(1617011400, 0)
-var e1BuildFinished = time.Unix(1617011415, 0)
+var e1BuildStart = time.Unix(1617011400, 0).UTC()
+var e1BuildFinished = time.Unix(1617011415, 0).UTC()
 
 func TestTaskRunCreatePayload1(t *testing.T) {
 	ctx := logtesting.TestContextWithLogger(t)
 
-	tr, err := objectloader.TaskRunFromFile("../testdata/taskrun1.json")
+	tr, err := objectloader.TaskRunV1Beta1FromFile("../testdata/pipeline-v1beta1/taskrun1.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,101 +57,107 @@ func TestTaskRunCreatePayload1(t *testing.T) {
 			ID: "test_builder-1",
 		},
 	}
-	expected := in_toto.ProvenanceStatement{
-		StatementHeader: in_toto.StatementHeader{
-			Type:          in_toto.StatementInTotoV01,
-			PredicateType: slsa.PredicateSLSAProvenance,
-			Subject: []in_toto.Subject{
-				{
-					Name: "gcr.io/my/image",
-					Digest: slsa.DigestSet{
-						"sha256": "827521c857fdcd4374f4da5442fbae2edb01e7fbae285c3ec15673d4c1daecb7",
-					},
-				},
+
+	predicate := slsa.ProvenancePredicate{
+		Metadata: &slsa.ProvenanceMetadata{
+			BuildStartedOn:  &e1BuildStart,
+			BuildFinishedOn: &e1BuildFinished,
+		},
+		Materials: []common.ProvenanceMaterial{
+			{
+				URI:    artifacts.OCIScheme + "gcr.io/test1/test1",
+				Digest: common.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
+			},
+			{
+				URI:    artifacts.OCIScheme + "gcr.io/test2/test2",
+				Digest: common.DigestSet{"sha256": "4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac"},
+			},
+			{
+				URI:    artifacts.OCIScheme + "gcr.io/test3/test3",
+				Digest: common.DigestSet{"sha256": "f1a8b8549c179f41e27ff3db0fe1a1793e4b109da46586501a8343637b1d0478"},
+			},
+			{URI: artifacts.GitSchemePrefix + "https://git.test.com.git", Digest: common.DigestSet{"sha1": "sha:taskrun"}},
+		},
+		Invocation: slsa.ProvenanceInvocation{
+			ConfigSource: slsa.ConfigSource{
+				URI:        "github.com/test",
+				Digest:     map[string]string{"sha1": "ab123"},
+				EntryPoint: "build.yaml",
+			},
+			Parameters: map[string]v1beta1.ParamValue{
+				"IMAGE":             {Type: "string", StringVal: "test.io/test/image"},
+				"CHAINS-GIT_COMMIT": {Type: "string", StringVal: "sha:taskrun"},
+				"CHAINS-GIT_URL":    {Type: "string", StringVal: "https://git.test.com"},
+			},
+			Environment: map[string]map[string]string{
+				"labels": {"tekton.dev/pipelineTask": "build"},
 			},
 		},
-		Predicate: slsa.ProvenancePredicate{
-			Metadata: &slsa.ProvenanceMetadata{
-				BuildStartedOn:  &e1BuildStart,
-				BuildFinishedOn: &e1BuildFinished,
-			},
-			Materials: []slsa.ProvenanceMaterial{
+		Builder: common.ProvenanceBuilder{
+			ID: "test_builder-1",
+		},
+		BuildType: "tekton.dev/v1beta1/TaskRun",
+		BuildConfig: taskrun.BuildConfig{
+			Steps: []attest.StepAttestation{
 				{
-					URI:    "docker-pullable://gcr.io/test1/test1",
-					Digest: slsa.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
-				},
-				{
-					URI:    "docker-pullable://gcr.io/test2/test2",
-					Digest: slsa.DigestSet{"sha256": "4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac"},
-				},
-				{
-					URI:    "docker-pullable://gcr.io/test3/test3",
-					Digest: slsa.DigestSet{"sha256": "f1a8b8549c179f41e27ff3db0fe1a1793e4b109da46586501a8343637b1d0478"},
-				},
-				{URI: "git+https://git.test.com.git", Digest: slsa.DigestSet{"sha1": "sha:taskrun"}},
-			},
-			Invocation: slsa.ProvenanceInvocation{
-				ConfigSource: slsa.ConfigSource{
-					URI:        "github.com/test",
-					Digest:     map[string]string{"sha1": "ab123"},
-					EntryPoint: "build.yaml",
-				},
-				Parameters: map[string]v1beta1.ArrayOrString{
-					"IMAGE":             {Type: "string", StringVal: "test.io/test/image"},
-					"CHAINS-GIT_COMMIT": {Type: "string", StringVal: "sha:taskrun"},
-					"CHAINS-GIT_URL":    {Type: "string", StringVal: "https://git.test.com"},
-				},
-				Environment: map[string]map[string]string{
-					"labels": {"tekton.dev/pipelineTask": "build"},
-				},
-			},
-			Builder: slsa.ProvenanceBuilder{
-				ID: "test_builder-1",
-			},
-			BuildType: "tekton.dev/v1beta1/TaskRun",
-			BuildConfig: taskrun.BuildConfig{
-				Steps: []attest.StepAttestation{
-					{
-						Arguments: []string(nil),
-						Environment: map[string]interface{}{
-							"container": string("step1"),
-							"image":     string("docker-pullable://gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"),
-						},
+					Arguments: []string(nil),
+					Environment: map[string]interface{}{
+						"container": string("step1"),
+						"image":     artifacts.OCIScheme + "gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
 					},
-					{
-						Arguments: []string(nil),
-						Environment: map[string]interface{}{
-							"container": string("step2"),
-							"image":     string("docker-pullable://gcr.io/test2/test2@sha256:4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac"),
-						},
+				},
+				{
+					Arguments: []string(nil),
+					Environment: map[string]interface{}{
+						"container": string("step2"),
+						"image":     artifacts.OCIScheme + "gcr.io/test2/test2@sha256:4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac",
 					},
-					{
-						Arguments: []string(nil),
-						Environment: map[string]interface{}{
-							"container": string("step3"),
-							"image":     string("docker-pullable://gcr.io/test3/test3@sha256:f1a8b8549c179f41e27ff3db0fe1a1793e4b109da46586501a8343637b1d0478"),
-						},
+				},
+				{
+					Arguments: []string(nil),
+					Environment: map[string]interface{}{
+						"container": string("step3"),
+						"image":     artifacts.OCIScheme + "gcr.io/test3/test3@sha256:f1a8b8549c179f41e27ff3db0fe1a1793e4b109da46586501a8343637b1d0478",
 					},
 				},
 			},
 		},
 	}
+
+	predicateStruct, err := protos.GetPredicateStruct(&predicate)
+	if err != nil {
+		t.Fatalf("error creating proto struct from predicate: %v", err)
+	}
+
+	expected := &intoto.Statement{
+		Type:          in_toto.StatementInTotoV01,
+		PredicateType: slsa.PredicateSLSAProvenance,
+		Subject: []*intoto.ResourceDescriptor{
+			{
+				Name: "gcr.io/my/image",
+				Digest: common.DigestSet{
+					"sha256": "827521c857fdcd4374f4da5442fbae2edb01e7fbae285c3ec15673d4c1daecb7",
+				},
+			},
+		},
+		Predicate: predicateStruct,
+	}
 	i, _ := NewFormatter(cfg)
 
-	got, err := i.CreatePayload(ctx, objects.NewTaskRunObject(tr))
+	got, err := i.CreatePayload(ctx, objects.NewTaskRunObjectV1Beta1(tr))
 
 	if err != nil {
 		t.Errorf("unexpected error: %s", err.Error())
 	}
 
-	if diff := cmp.Diff(expected, got); diff != "" {
+	if diff := cmp.Diff(expected, got, cmp.Options{protocmp.Transform()}); diff != "" {
 		t.Errorf("InTotoIte6.CreatePayload(): -want +got: %s", diff)
 	}
 }
 
 func TestPipelineRunCreatePayload(t *testing.T) {
 	ctx := logtesting.TestContextWithLogger(t)
-	pr, err := objectloader.PipelineRunFromFile("../testdata/pipelinerun1.json")
+	pr, err := objectloader.PipelineRunV1Beta1FromFile("../testdata/pipeline-v1beta1/pipelinerun1.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,204 +167,82 @@ func TestPipelineRunCreatePayload(t *testing.T) {
 			ID: "test_builder-1",
 		},
 	}
-	expected := in_toto.ProvenanceStatement{
-		StatementHeader: in_toto.StatementHeader{
-			Type:          in_toto.StatementInTotoV01,
-			PredicateType: slsa.PredicateSLSAProvenance,
-			Subject: []in_toto.Subject{
-				{
-					Name: "test.io/test/image",
-					Digest: slsa.DigestSet{
-						"sha256": "827521c857fdcd4374f4da5442fbae2edb01e7fbae285c3ec15673d4c1daecb7",
-					},
-				},
+
+	predicate := &slsa.ProvenancePredicate{
+		Metadata: &slsa.ProvenanceMetadata{
+			BuildStartedOn:  &e1BuildStart,
+			BuildFinishedOn: &e1BuildFinished,
+			Completeness: slsa.ProvenanceComplete{
+				Parameters:  false,
+				Environment: false,
+				Materials:   false,
+			},
+			Reproducible: false,
+		},
+		Materials: []common.ProvenanceMaterial{
+			{URI: "github.com/test", Digest: common.DigestSet{"sha1": "28b123"}},
+			{
+				URI:    artifacts.OCIScheme + "gcr.io/test1/test1",
+				Digest: common.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
+			},
+			{URI: "github.com/catalog", Digest: common.DigestSet{"sha1": "x123"}},
+			{
+				URI:    artifacts.OCIScheme + "gcr.io/test2/test2",
+				Digest: common.DigestSet{"sha256": "4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac"},
+			},
+			{
+				URI:    artifacts.OCIScheme + "gcr.io/test3/test3",
+				Digest: common.DigestSet{"sha256": "f1a8b8549c179f41e27ff3db0fe1a1793e4b109da46586501a8343637b1d0478"},
+			},
+			{URI: "github.com/test", Digest: common.DigestSet{"sha1": "ab123"}},
+			{URI: "abc", Digest: common.DigestSet{"sha256": "827521c857fdcd4374f4da5442fbae2edb01e7fbae285c3ec15673d4c1daecb7"}},
+			{URI: artifacts.GitSchemePrefix + "https://git.test.com.git", Digest: common.DigestSet{"sha1": "abcd"}},
+		},
+		Invocation: slsa.ProvenanceInvocation{
+			ConfigSource: slsa.ConfigSource{
+				URI:        "github.com/test",
+				Digest:     map[string]string{"sha1": "28b123"},
+				EntryPoint: "pipeline.yaml",
+			},
+			Parameters: map[string]v1beta1.ParamValue{
+				"IMAGE": {Type: "string", StringVal: "test.io/test/image"},
 			},
 		},
-		Predicate: slsa.ProvenancePredicate{
-			Metadata: &slsa.ProvenanceMetadata{
-				BuildStartedOn:  &e1BuildStart,
-				BuildFinishedOn: &e1BuildFinished,
-				Completeness: slsa.ProvenanceComplete{
-					Parameters:  false,
-					Environment: false,
-					Materials:   false,
-				},
-				Reproducible: false,
-			},
-			Materials: []slsa.ProvenanceMaterial{
-				{URI: "github.com/test", Digest: slsa.DigestSet{"sha1": "28b123"}},
-				{
-					URI:    "docker-pullable://gcr.io/test1/test1",
-					Digest: slsa.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
-				},
-				{URI: "github.com/catalog", Digest: slsa.DigestSet{"sha1": "x123"}},
-				{
-					URI:    "docker-pullable://gcr.io/test2/test2",
-					Digest: slsa.DigestSet{"sha256": "4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac"},
-				},
-				{
-					URI:    "docker-pullable://gcr.io/test3/test3",
-					Digest: slsa.DigestSet{"sha256": "f1a8b8549c179f41e27ff3db0fe1a1793e4b109da46586501a8343637b1d0478"},
-				},
-				{URI: "github.com/test", Digest: slsa.DigestSet{"sha1": "ab123"}},
-				{URI: "abc", Digest: slsa.DigestSet{"sha256": "827521c857fdcd4374f4da5442fbae2edb01e7fbae285c3ec15673d4c1daecb7"}},
-				{URI: "git+https://git.test.com.git", Digest: slsa.DigestSet{"sha1": "abcd"}},
-			},
-			Invocation: slsa.ProvenanceInvocation{
-				ConfigSource: slsa.ConfigSource{
-					URI:        "github.com/test",
-					Digest:     map[string]string{"sha1": "28b123"},
-					EntryPoint: "pipeline.yaml",
-				},
-				Parameters: map[string]v1beta1.ArrayOrString{
-					"IMAGE": {Type: "string", StringVal: "test.io/test/image"},
-				},
-			},
-			Builder: slsa.ProvenanceBuilder{
-				ID: "test_builder-1",
-			},
-			BuildType: "tekton.dev/v1beta1/PipelineRun",
-			BuildConfig: pipelinerun.BuildConfig{
-				Tasks: []pipelinerun.TaskAttestation{
-					{
-						Name:  "git-clone",
-						After: nil,
-						Ref: v1beta1.TaskRef{
-							Name: "git-clone",
-							Kind: "ClusterTask",
-						},
-						StartedOn:  e1BuildStart,
-						FinishedOn: e1BuildFinished,
-						Status:     "Succeeded",
-						Steps: []attest.StepAttestation{
-							{
-								EntryPoint: "git clone",
-								Arguments:  []string(nil),
-								Environment: map[string]interface{}{
-									"container": "step1",
-									"image":     "docker-pullable://gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
-								},
-								Annotations: nil,
-							},
-						},
-						Invocation: slsa.ProvenanceInvocation{
-							ConfigSource: slsa.ConfigSource{
-								URI:        "github.com/catalog",
-								Digest:     slsa.DigestSet{"sha1": "x123"},
-								EntryPoint: "git-clone.yaml",
-							},
-							Parameters: map[string]v1beta1.ArrayOrString{
-								"CHAINS-GIT_COMMIT": {Type: "string", StringVal: "sha:taskdefault"},
-								"CHAINS-GIT_URL":    {Type: "string", StringVal: "https://git.test.com"},
-								"revision":          {Type: "string", StringVal: ""},
-								"url":               {Type: "string", StringVal: "https://git.test.com"},
-							},
-							Environment: map[string]map[string]string{
-								"labels": {"tekton.dev/pipelineTask": "git-clone"},
-							},
-						},
-						Results: []v1beta1.TaskRunResult{
-							{
-								Name: "some-uri_DIGEST",
-								Value: v1beta1.ArrayOrString{
-									Type:      v1beta1.ParamTypeString,
-									StringVal: "sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
-								},
-							},
-							{
-								Name: "some-uri",
-								Value: v1beta1.ArrayOrString{
-									Type:      v1beta1.ParamTypeString,
-									StringVal: "pkg:deb/debian/curl@7.50.3-1",
-								},
-							},
-						},
-					},
-					{
-						Name:  "build",
-						After: []string{"git-clone"},
-						Ref: v1beta1.TaskRef{
-							Name: "build",
-							Kind: "ClusterTask",
-						},
-						StartedOn:  e1BuildStart,
-						FinishedOn: e1BuildFinished,
-						Status:     "Succeeded",
-						Steps: []attest.StepAttestation{
-							{
-								EntryPoint: "",
-								Arguments:  []string(nil),
-								Environment: map[string]interface{}{
-									"image":     "docker-pullable://gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
-									"container": "step1",
-								},
-								Annotations: nil,
-							},
-							{
-								EntryPoint: "",
-								Arguments:  []string(nil),
-								Environment: map[string]interface{}{
-									"image":     "docker-pullable://gcr.io/test2/test2@sha256:4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac",
-									"container": "step2",
-								},
-								Annotations: nil,
-							},
-							{
-								EntryPoint: "",
-								Arguments:  []string(nil),
-								Environment: map[string]interface{}{
-									"image":     "docker-pullable://gcr.io/test3/test3@sha256:f1a8b8549c179f41e27ff3db0fe1a1793e4b109da46586501a8343637b1d0478",
-									"container": "step3",
-								},
-								Annotations: nil,
-							},
-						},
-						Invocation: slsa.ProvenanceInvocation{
-							ConfigSource: slsa.ConfigSource{
-								URI:        "github.com/test",
-								Digest:     map[string]string{"sha1": "ab123"},
-								EntryPoint: "build.yaml",
-							},
-							Parameters: map[string]v1beta1.ArrayOrString{
-								"CHAINS-GIT_COMMIT": {Type: "string", StringVal: "sha:taskrun"},
-								"CHAINS-GIT_URL":    {Type: "string", StringVal: "https://git.test.com"},
-								"IMAGE":             {Type: "string", StringVal: "test.io/test/image"},
-							},
-							Environment: map[string]map[string]string{
-								"labels": {"tekton.dev/pipelineTask": "build"},
-							},
-						},
-						Results: []v1beta1.TaskRunResult{
-							{
-								Name: "IMAGE_DIGEST",
-								Value: v1beta1.ArrayOrString{
-									Type:      v1beta1.ParamTypeString,
-									StringVal: "sha256:827521c857fdcd4374f4da5442fbae2edb01e7fbae285c3ec15673d4c1daecb7",
-								},
-							},
-							{
-								Name: "IMAGE_URL",
-								Value: v1beta1.ArrayOrString{
-									Type:      v1beta1.ParamTypeString,
-									StringVal: "gcr.io/my/image",
-								},
-							},
-						},
-					},
-				},
-			},
+		Builder: common.ProvenanceBuilder{
+			ID: "test_builder-1",
 		},
+		BuildType:   "tekton.dev/v1beta1/PipelineRun",
+		BuildConfig: getBuildPipelineRun(),
 	}
 
-	tr1, err := objectloader.TaskRunFromFile("../testdata/taskrun1.json")
+	predicateStruct, err := protos.GetPredicateStruct(predicate)
+	if err != nil {
+		t.Fatalf("error getting predicate struct: %v", err)
+	}
+
+	expected := &intoto.Statement{
+		Type:          in_toto.StatementInTotoV01,
+		PredicateType: slsa.PredicateSLSAProvenance,
+		Subject: []*intoto.ResourceDescriptor{
+			{
+				Name: "test.io/test/image",
+				Digest: common.DigestSet{
+					"sha256": "827521c857fdcd4374f4da5442fbae2edb01e7fbae285c3ec15673d4c1daecb7",
+				},
+			},
+		},
+		Predicate: predicateStruct,
+	}
+
+	tr1, err := objectloader.TaskRunV1Beta1FromFile("../testdata/pipeline-v1beta1/taskrun1.json")
 	if err != nil {
 		t.Errorf("error reading taskrun1: %s", err.Error())
 	}
-	tr2, err := objectloader.TaskRunFromFile("../testdata/taskrun2.json")
+	tr2, err := objectloader.TaskRunV1Beta1FromFile("../testdata/pipeline-v1beta1/taskrun2.json")
 	if err != nil {
 		t.Errorf("error reading taskrun: %s", err.Error())
 	}
-	pro := objects.NewPipelineRunObject(pr)
+	pro := objects.NewPipelineRunObjectV1Beta1(pr)
 	pro.AppendTaskRun(tr1)
 	pro.AppendTaskRun(tr2)
 
@@ -363,13 +253,13 @@ func TestPipelineRunCreatePayload(t *testing.T) {
 		t.Errorf("unexpected error: %s", err.Error())
 	}
 	// Sort Materials since their order can vary and result in flakes
-	if diff := cmp.Diff(expected, got); diff != "" {
+	if diff := cmp.Diff(expected, got, compare.MaterialsCompareOption(), protocmp.Transform()); diff != "" {
 		t.Errorf("InTotoIte6.CreatePayload(): -want +got: %s", diff)
 	}
 }
 func TestPipelineRunCreatePayloadChildRefs(t *testing.T) {
 	ctx := logtesting.TestContextWithLogger(t)
-	pr, err := objectloader.PipelineRunFromFile("../testdata/pipelinerun-childrefs.json")
+	pr, err := objectloader.PipelineRunV1Beta1FromFile("../testdata/pipeline-v1beta1/pipelinerun-childrefs.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,198 +269,77 @@ func TestPipelineRunCreatePayloadChildRefs(t *testing.T) {
 			ID: "test_builder-1",
 		},
 	}
-	expected := in_toto.ProvenanceStatement{
-		StatementHeader: in_toto.StatementHeader{
-			Type:          in_toto.StatementInTotoV01,
-			PredicateType: slsa.PredicateSLSAProvenance,
-			Subject: []in_toto.Subject{
-				{
-					Name: "test.io/test/image",
-					Digest: slsa.DigestSet{
-						"sha256": "827521c857fdcd4374f4da5442fbae2edb01e7fbae285c3ec15673d4c1daecb7",
-					},
-				},
+
+	predicate := &slsa.ProvenancePredicate{
+		Metadata: &slsa.ProvenanceMetadata{
+			BuildStartedOn:  &e1BuildStart,
+			BuildFinishedOn: &e1BuildFinished,
+			Completeness: slsa.ProvenanceComplete{
+				Parameters:  false,
+				Environment: false,
+				Materials:   false,
+			},
+			Reproducible: false,
+		},
+		Materials: []common.ProvenanceMaterial{
+			{
+				URI:    artifacts.OCIScheme + "gcr.io/test1/test1",
+				Digest: common.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
+			},
+			{URI: "github.com/catalog", Digest: common.DigestSet{"sha1": "x123"}},
+			{
+				URI:    artifacts.OCIScheme + "gcr.io/test2/test2",
+				Digest: common.DigestSet{"sha256": "4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac"},
+			},
+			{
+				URI:    artifacts.OCIScheme + "gcr.io/test3/test3",
+				Digest: common.DigestSet{"sha256": "f1a8b8549c179f41e27ff3db0fe1a1793e4b109da46586501a8343637b1d0478"},
+			},
+			{URI: "github.com/test", Digest: common.DigestSet{"sha1": "ab123"}},
+			{URI: artifacts.GitSchemePrefix + "https://git.test.com.git", Digest: common.DigestSet{"sha1": "abcd"}},
+		},
+		Invocation: slsa.ProvenanceInvocation{
+			ConfigSource: slsa.ConfigSource{},
+			Parameters: map[string]v1beta1.ParamValue{
+				"IMAGE": {Type: "string", StringVal: "test.io/test/image"},
 			},
 		},
-		Predicate: slsa.ProvenancePredicate{
-			Metadata: &slsa.ProvenanceMetadata{
-				BuildStartedOn:  &e1BuildStart,
-				BuildFinishedOn: &e1BuildFinished,
-				Completeness: slsa.ProvenanceComplete{
-					Parameters:  false,
-					Environment: false,
-					Materials:   false,
-				},
-				Reproducible: false,
-			},
-			Materials: []slsa.ProvenanceMaterial{
-				{
-					URI:    "docker-pullable://gcr.io/test1/test1",
-					Digest: slsa.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
-				},
-				{URI: "github.com/catalog", Digest: slsa.DigestSet{"sha1": "x123"}},
-				{
-					URI:    "docker-pullable://gcr.io/test2/test2",
-					Digest: slsa.DigestSet{"sha256": "4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac"},
-				},
-				{
-					URI:    "docker-pullable://gcr.io/test3/test3",
-					Digest: slsa.DigestSet{"sha256": "f1a8b8549c179f41e27ff3db0fe1a1793e4b109da46586501a8343637b1d0478"},
-				},
-				{URI: "github.com/test", Digest: slsa.DigestSet{"sha1": "ab123"}},
-				{URI: "git+https://git.test.com.git", Digest: slsa.DigestSet{"sha1": "abcd"}},
-			},
-			Invocation: slsa.ProvenanceInvocation{
-				ConfigSource: slsa.ConfigSource{},
-				Parameters: map[string]v1beta1.ArrayOrString{
-					"IMAGE": {Type: "string", StringVal: "test.io/test/image"},
-				},
-			},
-			Builder: slsa.ProvenanceBuilder{
-				ID: "test_builder-1",
-			},
-			BuildType: "tekton.dev/v1beta1/PipelineRun",
-			BuildConfig: pipelinerun.BuildConfig{
-				Tasks: []pipelinerun.TaskAttestation{
-					{
-						Name:  "git-clone",
-						After: nil,
-						Ref: v1beta1.TaskRef{
-							Name: "git-clone",
-							Kind: "ClusterTask",
-						},
-						StartedOn:  e1BuildStart,
-						FinishedOn: e1BuildFinished,
-						Status:     "Succeeded",
-						Steps: []attest.StepAttestation{
-							{
-								EntryPoint: "git clone",
-								Arguments:  []string(nil),
-								Environment: map[string]interface{}{
-									"container": "step1",
-									"image":     "docker-pullable://gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
-								},
-								Annotations: nil,
-							},
-						},
-						Invocation: slsa.ProvenanceInvocation{
-							ConfigSource: slsa.ConfigSource{
-								URI:        "github.com/catalog",
-								Digest:     slsa.DigestSet{"sha1": "x123"},
-								EntryPoint: "git-clone.yaml",
-							},
-							Parameters: map[string]v1beta1.ArrayOrString{
-								"CHAINS-GIT_COMMIT": {Type: "string", StringVal: "sha:taskdefault"},
-								"CHAINS-GIT_URL":    {Type: "string", StringVal: "https://git.test.com"},
-								"revision":          {Type: "string", StringVal: ""},
-								"url":               {Type: "string", StringVal: "https://git.test.com"},
-							},
-							Environment: map[string]map[string]string{
-								"labels": {"tekton.dev/pipelineTask": "git-clone"},
-							},
-						},
-						Results: []v1beta1.TaskRunResult{
-							{
-								Name: "some-uri_DIGEST",
-								Value: v1beta1.ArrayOrString{
-									Type:      v1beta1.ParamTypeString,
-									StringVal: "sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
-								},
-							},
-							{
-								Name: "some-uri",
-								Value: v1beta1.ArrayOrString{
-									Type:      v1beta1.ParamTypeString,
-									StringVal: "pkg:deb/debian/curl@7.50.3-1",
-								},
-							},
-						},
-					},
-					{
-						Name:  "build",
-						After: []string{"git-clone"},
-						Ref: v1beta1.TaskRef{
-							Name: "build",
-							Kind: "ClusterTask",
-						},
-						StartedOn:  e1BuildStart,
-						FinishedOn: e1BuildFinished,
-						Status:     "Succeeded",
-						Steps: []attest.StepAttestation{
-							{
-								EntryPoint: "",
-								Arguments:  []string(nil),
-								Environment: map[string]interface{}{
-									"image":     "docker-pullable://gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
-									"container": "step1",
-								},
-								Annotations: nil,
-							},
-							{
-								EntryPoint: "",
-								Arguments:  []string(nil),
-								Environment: map[string]interface{}{
-									"image":     "docker-pullable://gcr.io/test2/test2@sha256:4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac",
-									"container": "step2",
-								},
-								Annotations: nil,
-							},
-							{
-								EntryPoint: "",
-								Arguments:  []string(nil),
-								Environment: map[string]interface{}{
-									"image":     "docker-pullable://gcr.io/test3/test3@sha256:f1a8b8549c179f41e27ff3db0fe1a1793e4b109da46586501a8343637b1d0478",
-									"container": "step3",
-								},
-								Annotations: nil,
-							},
-						},
-						Invocation: slsa.ProvenanceInvocation{
-							ConfigSource: slsa.ConfigSource{
-								URI:        "github.com/test",
-								Digest:     map[string]string{"sha1": "ab123"},
-								EntryPoint: "build.yaml",
-							},
-							Parameters: map[string]v1beta1.ArrayOrString{
-								"CHAINS-GIT_COMMIT": {Type: "string", StringVal: "sha:taskrun"},
-								"CHAINS-GIT_URL":    {Type: "string", StringVal: "https://git.test.com"},
-								"IMAGE":             {Type: "string", StringVal: "test.io/test/image"},
-							},
-							Environment: map[string]map[string]string{
-								"labels": {"tekton.dev/pipelineTask": "build"},
-							},
-						},
-						Results: []v1beta1.TaskRunResult{
-							{
-								Name: "IMAGE_DIGEST",
-								Value: v1beta1.ArrayOrString{
-									Type:      v1beta1.ParamTypeString,
-									StringVal: "sha256:827521c857fdcd4374f4da5442fbae2edb01e7fbae285c3ec15673d4c1daecb7",
-								},
-							},
-							{
-								Name: "IMAGE_URL",
-								Value: v1beta1.ArrayOrString{
-									Type:      v1beta1.ParamTypeString,
-									StringVal: "gcr.io/my/image",
-								},
-							},
-						},
-					},
-				},
-			},
+		Builder: common.ProvenanceBuilder{
+			ID: "test_builder-1",
 		},
+		BuildType:   "tekton.dev/v1beta1/PipelineRun",
+		BuildConfig: getBuildPipelineRun(),
 	}
 
-	tr1, err := objectloader.TaskRunFromFile("../testdata/taskrun1.json")
+	predicateStruct, err := protos.GetPredicateStruct(predicate)
+	if err != nil {
+		t.Fatalf("error getting predicate struct: %v", err)
+	}
+
+	expected := &intoto.Statement{
+
+		Type:          in_toto.StatementInTotoV01,
+		PredicateType: slsa.PredicateSLSAProvenance,
+		Subject: []*intoto.ResourceDescriptor{
+			{
+				Name: "test.io/test/image",
+				Digest: common.DigestSet{
+					"sha256": "827521c857fdcd4374f4da5442fbae2edb01e7fbae285c3ec15673d4c1daecb7",
+				},
+			},
+		},
+		Predicate: predicateStruct,
+	}
+
+	tr1, err := objectloader.TaskRunV1Beta1FromFile("../testdata/pipeline-v1beta1/taskrun1.json")
 	if err != nil {
 		t.Errorf("error reading taskrun1: %s", err.Error())
 	}
-	tr2, err := objectloader.TaskRunFromFile("../testdata/taskrun2.json")
+	tr2, err := objectloader.TaskRunV1Beta1FromFile("../testdata/pipeline-v1beta1/taskrun2.json")
 	if err != nil {
 		t.Errorf("error reading taskrun: %s", err.Error())
 	}
-	pro := objects.NewPipelineRunObject(pr)
+	pro := objects.NewPipelineRunObjectV1Beta1(pr)
 	pro.AppendTaskRun(tr1)
 	pro.AppendTaskRun(tr2)
 
@@ -580,14 +349,14 @@ func TestPipelineRunCreatePayloadChildRefs(t *testing.T) {
 		t.Errorf("unexpected error: %s", err.Error())
 	}
 	// Sort Materials since their order can vary and result in flakes
-	if diff := cmp.Diff(expected, got); diff != "" {
+	if diff := cmp.Diff(expected, got, compare.MaterialsCompareOption(), protocmp.Transform()); diff != "" {
 		t.Errorf("InTotoIte6.CreatePayload(): -want +got: %s", diff)
 	}
 }
 
 func TestTaskRunCreatePayload2(t *testing.T) {
 	ctx := logtesting.TestContextWithLogger(t)
-	tr, err := objectloader.TaskRunFromFile("../testdata/taskrun2.json")
+	tr, err := objectloader.TaskRunV1Beta1FromFile("../testdata/pipeline-v1beta1/taskrun2.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -597,65 +366,71 @@ func TestTaskRunCreatePayload2(t *testing.T) {
 			ID: "test_builder-2",
 		},
 	}
-	expected := in_toto.ProvenanceStatement{
-		StatementHeader: in_toto.StatementHeader{
-			Type:          in_toto.StatementInTotoV01,
-			PredicateType: slsa.PredicateSLSAProvenance,
-			Subject:       nil,
+
+	predicate := &slsa.ProvenancePredicate{
+		Metadata: &slsa.ProvenanceMetadata{
+			BuildStartedOn:  &e1BuildStart,
+			BuildFinishedOn: &e1BuildFinished,
 		},
-		Predicate: slsa.ProvenancePredicate{
-			Metadata: &slsa.ProvenanceMetadata{
-				BuildStartedOn:  &e1BuildStart,
-				BuildFinishedOn: &e1BuildFinished,
+		Builder: common.ProvenanceBuilder{
+			ID: "test_builder-2",
+		},
+		Materials: []common.ProvenanceMaterial{
+			{
+				URI:    artifacts.OCIScheme + "gcr.io/test1/test1",
+				Digest: common.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
 			},
-			Builder: slsa.ProvenanceBuilder{
-				ID: "test_builder-2",
+			{URI: artifacts.GitSchemePrefix + "https://git.test.com.git", Digest: common.DigestSet{"sha1": "sha:taskdefault"}},
+		},
+		Invocation: slsa.ProvenanceInvocation{
+			ConfigSource: slsa.ConfigSource{
+				URI:        "github.com/catalog",
+				Digest:     common.DigestSet{"sha1": "x123"},
+				EntryPoint: "git-clone.yaml",
 			},
-			Materials: []slsa.ProvenanceMaterial{
+			Parameters: map[string]v1beta1.ParamValue{
+				"CHAINS-GIT_COMMIT": {Type: "string", StringVal: "sha:taskdefault"},
+				"CHAINS-GIT_URL":    {Type: "string", StringVal: "https://git.test.com"},
+				"revision":          {Type: "string"},
+				"url":               {Type: "string", StringVal: "https://git.test.com"},
+			},
+			Environment: map[string]map[string]string{
+				"labels": {"tekton.dev/pipelineTask": "git-clone"},
+			},
+		},
+		BuildType: "tekton.dev/v1beta1/TaskRun",
+		BuildConfig: taskrun.BuildConfig{
+			Steps: []attest.StepAttestation{
 				{
-					URI:    "docker-pullable://gcr.io/test1/test1",
-					Digest: slsa.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
-				},
-				{URI: "git+https://git.test.com.git", Digest: slsa.DigestSet{"sha1": "sha:taskdefault"}},
-			},
-			Invocation: slsa.ProvenanceInvocation{
-				ConfigSource: slsa.ConfigSource{
-					URI:        "github.com/catalog",
-					Digest:     slsa.DigestSet{"sha1": "x123"},
-					EntryPoint: "git-clone.yaml",
-				},
-				Parameters: map[string]v1beta1.ArrayOrString{
-					"CHAINS-GIT_COMMIT": {Type: "string", StringVal: "sha:taskdefault"},
-					"CHAINS-GIT_URL":    {Type: "string", StringVal: "https://git.test.com"},
-					"revision":          {Type: "string"},
-					"url":               {Type: "string", StringVal: "https://git.test.com"},
-				},
-				Environment: map[string]map[string]string{
-					"labels": {"tekton.dev/pipelineTask": "git-clone"},
-				},
-			},
-			BuildType: "tekton.dev/v1beta1/TaskRun",
-			BuildConfig: taskrun.BuildConfig{
-				Steps: []attest.StepAttestation{
-					{
-						EntryPoint: "git clone",
-						Arguments:  []string(nil),
-						Environment: map[string]interface{}{
-							"container": string("step1"),
-							"image":     string("docker-pullable://gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"),
-						},
+					EntryPoint: "git clone",
+					Arguments:  []string(nil),
+					Environment: map[string]interface{}{
+						"container": string("step1"),
+						"image":     artifacts.OCIScheme + "gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
 					},
 				},
 			},
 		},
 	}
+
+	predicateStruct, err := protos.GetPredicateStruct(predicate)
+	if err != nil {
+		t.Fatalf("error getting predicate struct: %v", err)
+	}
+
+	expected := &intoto.Statement{
+		Type:          in_toto.StatementInTotoV01,
+		PredicateType: slsa.PredicateSLSAProvenance,
+		Subject:       nil,
+		Predicate:     predicateStruct,
+	}
 	i, _ := NewFormatter(cfg)
-	got, err := i.CreatePayload(ctx, objects.NewTaskRunObject(tr))
+	got, err := i.CreatePayload(ctx, objects.NewTaskRunObjectV1Beta1(tr))
 
 	if err != nil {
 		t.Errorf("unexpected error: %s", err.Error())
 	}
-	if diff := cmp.Diff(expected, got); diff != "" {
+	if diff := cmp.Diff(expected, got, protocmp.Transform()); diff != "" {
 		t.Errorf("InTotoIte6.CreatePayload(): -want +got: %s", diff)
 	}
 }
@@ -663,7 +438,7 @@ func TestTaskRunCreatePayload2(t *testing.T) {
 func TestMultipleSubjects(t *testing.T) {
 	ctx := logtesting.TestContextWithLogger(t)
 
-	tr, err := objectloader.TaskRunFromFile("../testdata/taskrun-multiple-subjects.json")
+	tr, err := objectloader.TaskRunV1Beta1FromFile("../testdata/pipeline-v1beta1/taskrun-multiple-subjects.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -673,59 +448,65 @@ func TestMultipleSubjects(t *testing.T) {
 			ID: "test_builder-multiple",
 		},
 	}
-	expected := in_toto.ProvenanceStatement{
-		StatementHeader: in_toto.StatementHeader{
-			Type:          in_toto.StatementInTotoV01,
-			PredicateType: slsa.PredicateSLSAProvenance,
-			Subject: []in_toto.Subject{
-				{
-					Name: "gcr.io/myimage",
-					Digest: slsa.DigestSet{
-						"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
-					},
-				}, {
-					Name: "gcr.io/myimage",
-					Digest: slsa.DigestSet{
-						"sha256": "daa1a56e13c85cf164e7d9e595006649e3a04c47fe4a8261320e18a0bf3b0367",
-					},
-				},
+
+	predicate := &slsa.ProvenancePredicate{
+		BuildType: "tekton.dev/v1beta1/TaskRun",
+		Metadata:  &slsa.ProvenanceMetadata{},
+		Builder: common.ProvenanceBuilder{
+			ID: "test_builder-multiple",
+		},
+		Materials: []common.ProvenanceMaterial{
+			{
+				URI:    artifacts.OCIScheme + "gcr.io/test1/test1",
+				Digest: common.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
 			},
 		},
-		Predicate: slsa.ProvenancePredicate{
-			BuildType: "tekton.dev/v1beta1/TaskRun",
-			Metadata:  &slsa.ProvenanceMetadata{},
-			Builder: slsa.ProvenanceBuilder{
-				ID: "test_builder-multiple",
-			},
-			Materials: []slsa.ProvenanceMaterial{
+		Invocation: slsa.ProvenanceInvocation{
+			Parameters: map[string]v1beta1.ParamValue{},
+		},
+		BuildConfig: taskrun.BuildConfig{
+			Steps: []attest.StepAttestation{
 				{
-					URI:    "docker-pullable://gcr.io/test1/test1",
-					Digest: slsa.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
-				},
-			},
-			Invocation: slsa.ProvenanceInvocation{
-				Parameters: map[string]v1beta1.ArrayOrString{},
-			},
-			BuildConfig: taskrun.BuildConfig{
-				Steps: []attest.StepAttestation{
-					{
-						Arguments: []string(nil),
-						Environment: map[string]interface{}{
-							"container": string("step1"),
-							"image":     string("docker-pullable://gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"),
-						},
+					Arguments: []string(nil),
+					Environment: map[string]interface{}{
+						"container": string("step1"),
+						"image":     artifacts.OCIScheme + "gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
 					},
 				},
 			},
 		},
 	}
 
+	predicateStruct, err := protos.GetPredicateStruct(predicate)
+	if err != nil {
+		t.Fatalf("error getting predicate struct: %v", err)
+	}
+
+	expected := &intoto.Statement{
+		Type:          in_toto.StatementInTotoV01,
+		PredicateType: slsa.PredicateSLSAProvenance,
+		Subject: []*intoto.ResourceDescriptor{
+			{
+				Name: "gcr.io/myimage1",
+				Digest: common.DigestSet{
+					"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
+				},
+			}, {
+				Name: "gcr.io/myimage2",
+				Digest: common.DigestSet{
+					"sha256": "daa1a56e13c85cf164e7d9e595006649e3a04c47fe4a8261320e18a0bf3b0367",
+				},
+			},
+		},
+		Predicate: predicateStruct,
+	}
+
 	i, _ := NewFormatter(cfg)
-	got, err := i.CreatePayload(ctx, objects.NewTaskRunObject(tr))
+	got, err := i.CreatePayload(ctx, objects.NewTaskRunObjectV1Beta1(tr))
 	if err != nil {
 		t.Errorf("unexpected error: %s", err.Error())
 	}
-	if diff := cmp.Diff(expected, got); diff != "" {
+	if diff := cmp.Diff(expected, got, protocmp.Transform()); diff != "" {
 		t.Errorf("InTotoIte6.CreatePayload(): -want +got: %s", diff)
 	}
 }
@@ -778,5 +559,139 @@ func TestCorrectPayloadType(t *testing.T) {
 	var i InTotoIte6
 	if i.Type() != formats.PayloadTypeSlsav1 {
 		t.Errorf("Invalid type returned: %s", i.Type())
+	}
+}
+
+func getBuildPipelineRun() pipelinerun.BuildConfig {
+	return pipelinerun.BuildConfig{
+		Tasks: []pipelinerun.TaskAttestation{
+			{
+				Name:  "git-clone",
+				After: nil,
+				Ref: v1beta1.TaskRef{
+					Name: "git-clone",
+					Kind: "ClusterTask",
+				},
+				StartedOn:          e1BuildStart,
+				FinishedOn:         e1BuildFinished,
+				ServiceAccountName: "pipeline",
+				Status:             "Succeeded",
+				Steps: []attest.StepAttestation{
+					{
+						EntryPoint: "git clone",
+						Arguments:  []string(nil),
+						Environment: map[string]interface{}{
+							"container": "step1",
+							"image":     artifacts.OCIScheme + "gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
+						},
+						Annotations: nil,
+					},
+				},
+				Invocation: slsa.ProvenanceInvocation{
+					ConfigSource: slsa.ConfigSource{
+						URI:        "github.com/catalog",
+						Digest:     common.DigestSet{"sha1": "x123"},
+						EntryPoint: "git-clone.yaml",
+					},
+					Parameters: map[string]v1beta1.ParamValue{
+						"CHAINS-GIT_COMMIT": {Type: "string", StringVal: "sha:taskdefault"},
+						"CHAINS-GIT_URL":    {Type: "string", StringVal: "https://git.test.com"},
+						"revision":          {Type: "string", StringVal: ""},
+						"url":               {Type: "string", StringVal: "https://git.test.com"},
+					},
+					Environment: map[string]map[string]string{
+						"labels": {"tekton.dev/pipelineTask": "git-clone"},
+					},
+				},
+				Results: []v1beta1.TaskRunResult{
+					{
+						Name: "some-uri_DIGEST",
+						Value: v1beta1.ParamValue{
+							Type:      v1beta1.ParamTypeString,
+							StringVal: "sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
+						},
+					},
+					{
+						Name: "some-uri",
+						Value: v1beta1.ParamValue{
+							Type:      v1beta1.ParamTypeString,
+							StringVal: "pkg:deb/debian/curl@7.50.3-1",
+						},
+					},
+				},
+			},
+			{
+				Name:  "build",
+				After: []string{"git-clone"},
+				Ref: v1beta1.TaskRef{
+					Name: "build",
+					Kind: "ClusterTask",
+				},
+				StartedOn:          e1BuildStart,
+				FinishedOn:         e1BuildFinished,
+				ServiceAccountName: "pipeline",
+				Status:             "Succeeded",
+				Steps: []attest.StepAttestation{
+					{
+						EntryPoint: "",
+						Arguments:  []string(nil),
+						Environment: map[string]interface{}{
+							"image":     artifacts.OCIScheme + "gcr.io/test1/test1@sha256:d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6",
+							"container": "step1",
+						},
+						Annotations: nil,
+					},
+					{
+						EntryPoint: "",
+						Arguments:  []string(nil),
+						Environment: map[string]interface{}{
+							"image":     artifacts.OCIScheme + "gcr.io/test2/test2@sha256:4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac",
+							"container": "step2",
+						},
+						Annotations: nil,
+					},
+					{
+						EntryPoint: "",
+						Arguments:  []string(nil),
+						Environment: map[string]interface{}{
+							"image":     artifacts.OCIScheme + "gcr.io/test3/test3@sha256:f1a8b8549c179f41e27ff3db0fe1a1793e4b109da46586501a8343637b1d0478",
+							"container": "step3",
+						},
+						Annotations: nil,
+					},
+				},
+				Invocation: slsa.ProvenanceInvocation{
+					ConfigSource: slsa.ConfigSource{
+						URI:        "github.com/test",
+						Digest:     map[string]string{"sha1": "ab123"},
+						EntryPoint: "build.yaml",
+					},
+					Parameters: map[string]v1beta1.ParamValue{
+						"CHAINS-GIT_COMMIT": {Type: "string", StringVal: "sha:taskrun"},
+						"CHAINS-GIT_URL":    {Type: "string", StringVal: "https://git.test.com"},
+						"IMAGE":             {Type: "string", StringVal: "test.io/test/image"},
+					},
+					Environment: map[string]map[string]string{
+						"labels": {"tekton.dev/pipelineTask": "build"},
+					},
+				},
+				Results: []v1beta1.TaskRunResult{
+					{
+						Name: "IMAGE_DIGEST",
+						Value: v1beta1.ParamValue{
+							Type:      v1beta1.ParamTypeString,
+							StringVal: "sha256:827521c857fdcd4374f4da5442fbae2edb01e7fbae285c3ec15673d4c1daecb7",
+						},
+					},
+					{
+						Name: "IMAGE_URL",
+						Value: v1beta1.ParamValue{
+							Type:      v1beta1.ParamTypeString,
+							StringVal: "gcr.io/my/image",
+						},
+					},
+				},
+			},
+		},
 	}
 }

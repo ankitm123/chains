@@ -16,15 +16,22 @@
  *
  */
 
-// Package weightedroundrobin defines a weighted roundrobin balancer.
+// Package weightedroundrobin provides an implementation of the weighted round
+// robin LB policy, as defined in [gRFC A58].
+//
+// # Experimental
+//
+// Notice: This package is EXPERIMENTAL and may be changed or removed in a
+// later release.
+//
+// [gRFC A58]: https://github.com/grpc/proposal/blob/master/A58-client-side-weighted-round-robin-lb-policy.md
 package weightedroundrobin
 
 import (
+	"fmt"
+
 	"google.golang.org/grpc/resolver"
 )
-
-// Name is the name of weighted_round_robin balancer.
-const Name = "weighted_round_robin"
 
 // attributeKey is the type used as the key to store AddrInfo in the
 // BalancerAttributes field of resolver.Address.
@@ -37,32 +44,33 @@ type AddrInfo struct {
 }
 
 // Equal allows the values to be compared by Attributes.Equal.
-func (a AddrInfo) Equal(o interface{}) bool {
+func (a AddrInfo) Equal(o any) bool {
 	oa, ok := o.(AddrInfo)
 	return ok && oa.Weight == a.Weight
 }
 
 // SetAddrInfo returns a copy of addr in which the BalancerAttributes field is
 // updated with addrInfo.
-//
-// # Experimental
-//
-// Notice: This API is EXPERIMENTAL and may be changed or removed in a
-// later release.
 func SetAddrInfo(addr resolver.Address, addrInfo AddrInfo) resolver.Address {
 	addr.BalancerAttributes = addr.BalancerAttributes.WithValue(attributeKey{}, addrInfo)
 	return addr
 }
 
+// SetAddrInfoInEndpoint returns a copy of endpoint in which the Attributes
+// field is updated with addrInfo.
+func SetAddrInfoInEndpoint(endpoint resolver.Endpoint, addrInfo AddrInfo) resolver.Endpoint {
+	endpoint.Attributes = endpoint.Attributes.WithValue(attributeKey{}, addrInfo)
+	return endpoint
+}
+
 // GetAddrInfo returns the AddrInfo stored in the BalancerAttributes field of
 // addr.
-//
-// # Experimental
-//
-// Notice: This API is EXPERIMENTAL and may be changed or removed in a
-// later release.
 func GetAddrInfo(addr resolver.Address) AddrInfo {
 	v := addr.BalancerAttributes.Value(attributeKey{})
 	ai, _ := v.(AddrInfo)
 	return ai
+}
+
+func (a AddrInfo) String() string {
+	return fmt.Sprintf("Weight: %d", a.Weight)
 }

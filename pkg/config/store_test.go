@@ -88,6 +88,7 @@ var defaultSigners = SignerConfigs{
 	X509: X509Signer{
 		FulcioAddr:       "https://fulcio.sigstore.dev",
 		FulcioOIDCIssuer: "https://oauth2.sigstore.dev/auth",
+		TUFMirrorURL:     "https://tuf-repo-cdn.sigstore.dev",
 	},
 }
 
@@ -98,17 +99,18 @@ var defaultBuilder = BuilderConfig{
 var defaultArtifacts = ArtifactConfigs{
 	TaskRuns: Artifact{
 		Format:         "in-toto",
-		StorageBackend: sets.NewString("tekton"),
+		StorageBackend: sets.New[string]("tekton"),
 		Signer:         "x509",
 	},
 	PipelineRuns: Artifact{
-		Format:         "in-toto",
-		Signer:         "x509",
-		StorageBackend: sets.NewString("tekton"),
+		Format:                "in-toto",
+		Signer:                "x509",
+		StorageBackend:        sets.New[string]("tekton"),
+		DeepInspectionEnabled: false,
 	},
 	OCI: Artifact{
 		Format:         "simplesigning",
-		StorageBackend: sets.NewString("oci"),
+		StorageBackend: sets.New[string]("oci"),
 		Signer:         "x509",
 	},
 }
@@ -121,6 +123,10 @@ var defaultStorage = StorageConfigs{
 
 var defaultTransparency = TransparencyConfig{
 	URL: "https://rekor.sigstore.dev",
+}
+
+var defaultBuildDefinition = BuildDefinitionConfig{
+	BuildType: "https://tekton.dev/chains/v2/slsa",
 }
 
 func TestParse(t *testing.T) {
@@ -137,11 +143,12 @@ func TestParse(t *testing.T) {
 			taskrunEnabled: true,
 			ociEnbaled:     true,
 			want: Config{
-				Builder:      defaultBuilder,
-				Artifacts:    defaultArtifacts,
-				Signers:      defaultSigners,
-				Storage:      defaultStorage,
-				Transparency: defaultTransparency,
+				Builder:         defaultBuilder,
+				Artifacts:       defaultArtifacts,
+				Signers:         defaultSigners,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		}, {
 			name: "builder configuration",
@@ -154,10 +161,11 @@ func TestParse(t *testing.T) {
 				Builder: BuilderConfig{
 					"builder-id-test",
 				},
-				Artifacts:    defaultArtifacts,
-				Signers:      defaultSigners,
-				Storage:      defaultStorage,
-				Transparency: defaultTransparency,
+				Artifacts:       defaultArtifacts,
+				Signers:         defaultSigners,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		}, {
 			name: "storage configuration",
@@ -175,7 +183,8 @@ func TestParse(t *testing.T) {
 						NoteHint: "a test message",
 					},
 				},
-				Transparency: defaultTransparency,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		},
 		{
@@ -188,23 +197,56 @@ func TestParse(t *testing.T) {
 				Artifacts: ArtifactConfigs{
 					TaskRuns: Artifact{
 						Format:         "in-toto",
-						StorageBackend: sets.NewString("tekton", "oci"),
+						StorageBackend: sets.New[string]("tekton", "oci"),
 						Signer:         "x509",
 					},
 					PipelineRuns: Artifact{
-						Format:         "in-toto",
-						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						Format:                "in-toto",
+						Signer:                "x509",
+						StorageBackend:        sets.New[string]("tekton"),
+						DeepInspectionEnabled: false,
 					},
 					OCI: Artifact{
 						Format:         "simplesigning",
-						StorageBackend: sets.NewString("oci"),
+						StorageBackend: sets.New[string]("oci"),
 						Signer:         "x509",
 					},
 				},
-				Signers:      defaultSigners,
-				Storage:      defaultStorage,
-				Transparency: defaultTransparency,
+				Signers:         defaultSigners,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
+			},
+		},
+		{
+			name:           "pipelineRun multi backend with docdb",
+			data:           map[string]string{pipelinerunStorageKey: "tekton,docdb"},
+			taskrunEnabled: true,
+			ociEnbaled:     true,
+			want: Config{
+				Builder: defaultBuilder,
+				Artifacts: ArtifactConfigs{
+					TaskRuns: Artifact{
+						Format:         "in-toto",
+						StorageBackend: sets.New[string]("tekton"),
+						Signer:         "x509",
+					},
+					PipelineRuns: Artifact{
+						Format:                "in-toto",
+						Signer:                "x509",
+						StorageBackend:        sets.New[string]("tekton", "docdb"),
+						DeepInspectionEnabled: false,
+					},
+					OCI: Artifact{
+						Format:         "simplesigning",
+						StorageBackend: sets.New[string]("oci"),
+						Signer:         "x509",
+					},
+				},
+				Signers:         defaultSigners,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		},
 		{
@@ -217,23 +259,25 @@ func TestParse(t *testing.T) {
 				Artifacts: ArtifactConfigs{
 					TaskRuns: Artifact{
 						Format:         "in-toto",
-						StorageBackend: sets.NewString(""),
+						StorageBackend: sets.New[string](""),
 						Signer:         "x509",
 					},
 					PipelineRuns: Artifact{
-						Format:         "in-toto",
-						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						Format:                "in-toto",
+						Signer:                "x509",
+						StorageBackend:        sets.New[string]("tekton"),
+						DeepInspectionEnabled: false,
 					},
 					OCI: Artifact{
 						Format:         "simplesigning",
-						StorageBackend: sets.NewString("oci"),
+						StorageBackend: sets.New[string]("oci"),
 						Signer:         "x509",
 					},
 				},
-				Signers:      defaultSigners,
-				Storage:      defaultStorage,
-				Transparency: defaultTransparency,
+				Signers:         defaultSigners,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		},
 		{
@@ -246,23 +290,25 @@ func TestParse(t *testing.T) {
 				Artifacts: ArtifactConfigs{
 					TaskRuns: Artifact{
 						Format:         "in-toto",
-						StorageBackend: sets.NewString("tekton"),
+						StorageBackend: sets.New[string]("tekton"),
 						Signer:         "x509",
 					},
 					PipelineRuns: Artifact{
-						Format:         "in-toto",
-						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						Format:                "in-toto",
+						Signer:                "x509",
+						StorageBackend:        sets.New[string]("tekton"),
+						DeepInspectionEnabled: false,
 					},
 					OCI: Artifact{
 						Format:         "simplesigning",
-						StorageBackend: sets.NewString("oci", "tekton"),
+						StorageBackend: sets.New[string]("oci", "tekton"),
 						Signer:         "x509",
 					},
 				},
-				Signers:      defaultSigners,
-				Storage:      defaultStorage,
-				Transparency: defaultTransparency,
+				Signers:         defaultSigners,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		},
 		{
@@ -275,23 +321,25 @@ func TestParse(t *testing.T) {
 				Artifacts: ArtifactConfigs{
 					TaskRuns: Artifact{
 						Format:         "in-toto",
-						StorageBackend: sets.NewString("tekton"),
+						StorageBackend: sets.New[string]("tekton"),
 						Signer:         "x509",
 					},
 					PipelineRuns: Artifact{
-						Format:         "in-toto",
-						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						Format:                "in-toto",
+						Signer:                "x509",
+						StorageBackend:        sets.New[string]("tekton"),
+						DeepInspectionEnabled: false,
 					},
 					OCI: Artifact{
 						Format:         "simplesigning",
-						StorageBackend: sets.NewString(""),
+						StorageBackend: sets.New[string](""),
 						Signer:         "x509",
 					},
 				},
-				Signers:      defaultSigners,
-				Storage:      defaultStorage,
-				Transparency: defaultTransparency,
+				Signers:         defaultSigners,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		},
 		{
@@ -307,23 +355,25 @@ func TestParse(t *testing.T) {
 				Artifacts: ArtifactConfigs{
 					TaskRuns: Artifact{
 						Format:         "in-toto",
-						StorageBackend: sets.NewString("tekton", "oci"),
+						StorageBackend: sets.New[string]("tekton", "oci"),
 						Signer:         "x509",
 					},
 					PipelineRuns: Artifact{
-						Format:         "in-toto",
-						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						Format:                "in-toto",
+						Signer:                "x509",
+						StorageBackend:        sets.New[string]("tekton"),
+						DeepInspectionEnabled: false,
 					},
 					OCI: Artifact{
 						Format:         "simplesigning",
-						StorageBackend: sets.NewString(""),
+						StorageBackend: sets.New[string](""),
 						Signer:         "x509",
 					},
 				},
-				Signers:      defaultSigners,
-				Storage:      defaultStorage,
-				Transparency: defaultTransparency,
+				Signers:         defaultSigners,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		},
 		{
@@ -339,23 +389,25 @@ func TestParse(t *testing.T) {
 				Artifacts: ArtifactConfigs{
 					TaskRuns: Artifact{
 						Format:         "in-toto",
-						StorageBackend: sets.NewString(""),
+						StorageBackend: sets.New[string](""),
 						Signer:         "x509",
 					},
 					PipelineRuns: Artifact{
-						Format:         "in-toto",
-						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						Format:                "in-toto",
+						Signer:                "x509",
+						StorageBackend:        sets.New[string]("tekton"),
+						DeepInspectionEnabled: false,
 					},
 					OCI: Artifact{
 						Format:         "simplesigning",
-						StorageBackend: sets.NewString("oci", "tekton"),
+						StorageBackend: sets.New[string]("oci", "tekton"),
 						Signer:         "x509",
 					},
 				},
-				Signers:      defaultSigners,
-				Storage:      defaultStorage,
-				Transparency: defaultTransparency,
+				Signers:         defaultSigners,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		},
 		{
@@ -369,22 +421,24 @@ func TestParse(t *testing.T) {
 					TaskRuns: Artifact{
 						Format:         "in-toto",
 						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						StorageBackend: sets.New[string]("tekton"),
 					},
 					PipelineRuns: Artifact{
-						Format:         "in-toto",
-						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						Format:                "in-toto",
+						Signer:                "x509",
+						StorageBackend:        sets.New[string]("tekton"),
+						DeepInspectionEnabled: false,
 					},
 					OCI: Artifact{
 						Format:         "simplesigning",
-						StorageBackend: sets.NewString("oci"),
+						StorageBackend: sets.New[string]("oci"),
 						Signer:         "x509",
 					},
 				},
-				Signers:      defaultSigners,
-				Storage:      defaultStorage,
-				Transparency: defaultTransparency,
+				Signers:         defaultSigners,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		},
 		{
@@ -402,13 +456,15 @@ func TestParse(t *testing.T) {
 					VerifyAnnotation: true,
 					URL:              "https://rekor.sigstore.dev",
 				},
+				BuildDefinition: defaultBuildDefinition,
 			},
 		},
 		{
 			name: "extra",
 			data: map[string]string{
-				taskrunSignerKey: "x509",
-				"other-key":      "foo",
+				taskrunSignerKey:                   "x509",
+				"other-key":                        "foo",
+				pipelinerunEnableDeepInspectionKey: "tr",
 			},
 			taskrunEnabled: true,
 			ociEnbaled:     true,
@@ -418,22 +474,24 @@ func TestParse(t *testing.T) {
 					TaskRuns: Artifact{
 						Format:         "in-toto",
 						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						StorageBackend: sets.New[string]("tekton"),
 					},
 					PipelineRuns: Artifact{
-						Format:         "in-toto",
-						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						Format:                "in-toto",
+						Signer:                "x509",
+						StorageBackend:        sets.New[string]("tekton"),
+						DeepInspectionEnabled: false,
 					},
 					OCI: Artifact{
 						Format:         "simplesigning",
-						StorageBackend: sets.NewString("oci"),
+						StorageBackend: sets.New[string]("oci"),
 						Signer:         "x509",
 					},
 				},
-				Signers:      defaultSigners,
-				Storage:      defaultStorage,
-				Transparency: defaultTransparency,
+				Signers:         defaultSigners,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		}, {
 			name: "fulcio",
@@ -450,16 +508,17 @@ func TestParse(t *testing.T) {
 					TaskRuns: Artifact{
 						Format:         "in-toto",
 						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						StorageBackend: sets.New[string]("tekton"),
 					},
 					PipelineRuns: Artifact{
-						Format:         "in-toto",
-						Signer:         "x509",
-						StorageBackend: sets.NewString("tekton"),
+						Format:                "in-toto",
+						Signer:                "x509",
+						StorageBackend:        sets.New[string]("tekton"),
+						DeepInspectionEnabled: false,
 					},
 					OCI: Artifact{
 						Format:         "simplesigning",
-						StorageBackend: sets.NewString("oci"),
+						StorageBackend: sets.New[string]("oci"),
 						Signer:         "x509",
 					},
 				},
@@ -468,10 +527,12 @@ func TestParse(t *testing.T) {
 						FulcioEnabled:    true,
 						FulcioAddr:       "fulcio-address",
 						FulcioOIDCIssuer: "https://oauth2.sigstore.dev/auth",
+						TUFMirrorURL:     "https://tuf-repo-cdn.sigstore.dev",
 					},
 				},
-				Storage:      defaultStorage,
-				Transparency: defaultTransparency,
+				Storage:         defaultStorage,
+				Transparency:    defaultTransparency,
+				BuildDefinition: defaultBuildDefinition,
 			},
 		}, {
 			name: "rekor - true",
@@ -487,6 +548,7 @@ func TestParse(t *testing.T) {
 					X509: X509Signer{
 						FulcioAddr:       "https://fulcio.sigstore.dev",
 						FulcioOIDCIssuer: "https://oauth2.sigstore.dev/auth",
+						TUFMirrorURL:     "https://tuf-repo-cdn.sigstore.dev",
 					},
 				},
 				Storage: defaultStorage,
@@ -494,6 +556,7 @@ func TestParse(t *testing.T) {
 					Enabled: true,
 					URL:     "https://rekor.sigstore.dev",
 				},
+				BuildDefinition: defaultBuildDefinition,
 			},
 		}, {
 			name: "rekor - manual",
@@ -509,6 +572,7 @@ func TestParse(t *testing.T) {
 					X509: X509Signer{
 						FulcioAddr:       "https://fulcio.sigstore.dev",
 						FulcioOIDCIssuer: "https://oauth2.sigstore.dev/auth",
+						TUFMirrorURL:     "https://tuf-repo-cdn.sigstore.dev",
 					},
 				},
 				Storage: defaultStorage,
@@ -516,6 +580,24 @@ func TestParse(t *testing.T) {
 					Enabled:          true,
 					VerifyAnnotation: true,
 					URL:              "https://rekor.sigstore.dev",
+				},
+				BuildDefinition: defaultBuildDefinition,
+			},
+		}, {
+			name: "buildDefinition - slsa-tekton",
+			data: map[string]string{
+				"builddefinition.buildtype": "https://tekton.dev/chains/v2/slsa-tekton",
+			},
+			taskrunEnabled: true,
+			ociEnbaled:     true,
+			want: Config{
+				Builder:      defaultBuilder,
+				Artifacts:    defaultArtifacts,
+				Signers:      defaultSigners,
+				Storage:      defaultStorage,
+				Transparency: defaultTransparency,
+				BuildDefinition: BuildDefinitionConfig{
+					BuildType: "https://tekton.dev/chains/v2/slsa-tekton",
 				},
 			},
 		},

@@ -22,6 +22,7 @@ package tlog
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -96,12 +97,19 @@ func (o *GetLogInfoOK) IsCode(code int) bool {
 	return code == 200
 }
 
+// Code gets the status code for the get log info o k response
+func (o *GetLogInfoOK) Code() int {
+	return 200
+}
+
 func (o *GetLogInfoOK) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log][%d] getLogInfoOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log][%d] getLogInfoOK %s", 200, payload)
 }
 
 func (o *GetLogInfoOK) String() string {
-	return fmt.Sprintf("[GET /api/v1/log][%d] getLogInfoOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log][%d] getLogInfoOK %s", 200, payload)
 }
 
 func (o *GetLogInfoOK) GetPayload() *models.LogInfo {
@@ -138,11 +146,6 @@ type GetLogInfoDefault struct {
 	Payload *models.Error
 }
 
-// Code gets the status code for the get log info default response
-func (o *GetLogInfoDefault) Code() int {
-	return o._statusCode
-}
-
 // IsSuccess returns true when this get log info default response has a 2xx status code
 func (o *GetLogInfoDefault) IsSuccess() bool {
 	return o._statusCode/100 == 2
@@ -168,12 +171,19 @@ func (o *GetLogInfoDefault) IsCode(code int) bool {
 	return o._statusCode == code
 }
 
+// Code gets the status code for the get log info default response
+func (o *GetLogInfoDefault) Code() int {
+	return o._statusCode
+}
+
 func (o *GetLogInfoDefault) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log][%d] getLogInfo default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log][%d] getLogInfo default %s", o._statusCode, payload)
 }
 
 func (o *GetLogInfoDefault) String() string {
-	return fmt.Sprintf("[GET /api/v1/log][%d] getLogInfo default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log][%d] getLogInfo default %s", o._statusCode, payload)
 }
 
 func (o *GetLogInfoDefault) GetPayload() *models.Error {

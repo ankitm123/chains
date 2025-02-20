@@ -4,25 +4,35 @@ package kms
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Cancels the deletion of a KMS key. When this operation succeeds, the key state
-// of the KMS key is Disabled. To enable the KMS key, use EnableKey. For more
-// information about scheduling and canceling deletion of a KMS key, see Deleting
-// KMS keys
-// (https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys.html) in
-// the Key Management Service Developer Guide. The KMS key that you use for this
-// operation must be in a compatible key state. For details, see Key states of KMS
-// keys (https://docs.aws.amazon.com/kms/latest/developerguide/key-state.html) in
-// the Key Management Service Developer Guide. Cross-account use: No. You cannot
-// perform this operation on a KMS key in a different Amazon Web Services account.
-// Required permissions: kms:CancelKeyDeletion
-// (https://docs.aws.amazon.com/kms/latest/developerguide/kms-api-permissions-reference.html)
-// (key policy) Related operations: ScheduleKeyDeletion
+// of the KMS key is Disabled . To enable the KMS key, use EnableKey.
+//
+// For more information about scheduling and canceling deletion of a KMS key, see [Deleting KMS keys]
+// in the Key Management Service Developer Guide.
+//
+// The KMS key that you use for this operation must be in a compatible key state.
+// For details, see [Key states of KMS keys]in the Key Management Service Developer Guide.
+//
+// Cross-account use: No. You cannot perform this operation on a KMS key in a
+// different Amazon Web Services account.
+//
+// Required permissions: [kms:CancelKeyDeletion] (key policy)
+//
+// Related operations: ScheduleKeyDeletion
+//
+// Eventual consistency: The KMS API follows an eventual consistency model. For
+// more information, see [KMS eventual consistency].
+//
+// [Key states of KMS keys]: https://docs.aws.amazon.com/kms/latest/developerguide/key-state.html
+// [kms:CancelKeyDeletion]: https://docs.aws.amazon.com/kms/latest/developerguide/kms-api-permissions-reference.html
+// [Deleting KMS keys]: https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys.html
+// [KMS eventual consistency]: https://docs.aws.amazon.com/kms/latest/developerguide/programming-eventual-consistency.html
 func (c *Client) CancelKeyDeletion(ctx context.Context, params *CancelKeyDeletionInput, optFns ...func(*Options)) (*CancelKeyDeletionOutput, error) {
 	if params == nil {
 		params = &CancelKeyDeletionInput{}
@@ -40,17 +50,18 @@ func (c *Client) CancelKeyDeletion(ctx context.Context, params *CancelKeyDeletio
 
 type CancelKeyDeletionInput struct {
 
-	// Identifies the KMS key whose deletion is being canceled. Specify the key ID or
-	// key ARN of the KMS key. For example:
+	// Identifies the KMS key whose deletion is being canceled.
 	//
-	// * Key ID:
-	// 1234abcd-12ab-34cd-56ef-1234567890ab
+	// Specify the key ID or key ARN of the KMS key.
 	//
-	// * Key ARN:
-	// arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+	// For example:
 	//
-	// To
-	// get the key ID and key ARN for a KMS key, use ListKeys or DescribeKey.
+	//   - Key ID: 1234abcd-12ab-34cd-56ef-1234567890ab
+	//
+	//   - Key ARN:
+	//   arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+	//
+	// To get the key ID and key ARN for a KMS key, use ListKeys or DescribeKey.
 	//
 	// This member is required.
 	KeyId *string
@@ -60,9 +71,9 @@ type CancelKeyDeletionInput struct {
 
 type CancelKeyDeletionOutput struct {
 
-	// The Amazon Resource Name (key ARN
-	// (https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#key-id-key-ARN))
-	// of the KMS key whose deletion is canceled.
+	// The Amazon Resource Name ([key ARN] ) of the KMS key whose deletion is canceled.
+	//
+	// [key ARN]: https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#key-id-key-ARN
 	KeyId *string
 
 	// Metadata pertaining to the operation's result.
@@ -72,6 +83,9 @@ type CancelKeyDeletionOutput struct {
 }
 
 func (c *Client) addOperationCancelKeyDeletionMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpCancelKeyDeletion{}, middleware.After)
 	if err != nil {
 		return err
@@ -80,34 +94,41 @@ func (c *Client) addOperationCancelKeyDeletionMiddlewares(stack *middleware.Stac
 	if err != nil {
 		return err
 	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "CancelKeyDeletion"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
+		return err
+	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddClientRequestIDMiddleware(stack); err != nil {
+	if err = addClientRequestID(stack); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddComputeContentLengthMiddleware(stack); err != nil {
+	if err = addComputeContentLength(stack); err != nil {
 		return err
 	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = v4.AddComputePayloadSHA256Middleware(stack); err != nil {
+	if err = addComputePayloadSHA256(stack); err != nil {
 		return err
 	}
-	if err = addRetryMiddlewares(stack, options); err != nil {
+	if err = addRetry(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+	if err = addRawResponseToMetadata(stack); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
+	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
+	if err = addSpanRetryLoop(stack, options); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -116,10 +137,22 @@ func (c *Client) addOperationCancelKeyDeletionMiddlewares(stack *middleware.Stac
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
+	if err = addTimeOffsetBuild(stack, c); err != nil {
+		return err
+	}
+	if err = addUserAgentRetryMode(stack, options); err != nil {
+		return err
+	}
 	if err = addOpCancelKeyDeletionValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opCancelKeyDeletion(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = addRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -131,6 +164,21 @@ func (c *Client) addOperationCancelKeyDeletionMiddlewares(stack *middleware.Stac
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
+	if err = addSpanInitializeStart(stack); err != nil {
+		return err
+	}
+	if err = addSpanInitializeEnd(stack); err != nil {
+		return err
+	}
+	if err = addSpanBuildRequestStart(stack); err != nil {
+		return err
+	}
+	if err = addSpanBuildRequestEnd(stack); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -138,7 +186,6 @@ func newServiceMetadataMiddleware_opCancelKeyDeletion(region string) *awsmiddlew
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "kms",
 		OperationName: "CancelKeyDeletion",
 	}
 }

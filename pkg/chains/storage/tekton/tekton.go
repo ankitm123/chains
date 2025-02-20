@@ -18,12 +18,15 @@ import (
 	"encoding/base64"
 	"fmt"
 
+	intoto "github.com/in-toto/attestation/go/v1"
 	"github.com/tektoncd/chains/pkg/chains/objects"
+	"github.com/tektoncd/chains/pkg/chains/signing"
+	"github.com/tektoncd/chains/pkg/chains/storage/api"
 	"github.com/tektoncd/chains/pkg/config"
+	"knative.dev/pkg/logging"
 
 	"github.com/tektoncd/chains/pkg/patch"
 	"github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
-	"go.uber.org/zap"
 )
 
 const (
@@ -36,38 +39,40 @@ const (
 
 // Backend is a storage backend that stores signed payloads in the TaskRun metadata as an annotation.
 // It is stored as base64 encoded JSON.
+// Deprecated: use Storer instead.
 type Backend struct {
 	pipelineclientset versioned.Interface
-	logger            *zap.SugaredLogger
 }
 
 // NewStorageBackend returns a new Tekton StorageBackend that stores signatures on a TaskRun
-func NewStorageBackend(ps versioned.Interface, logger *zap.SugaredLogger) *Backend {
+func NewStorageBackend(ps versioned.Interface) *Backend {
 	return &Backend{
 		pipelineclientset: ps,
-		logger:            logger,
 	}
 }
 
 // StorePayload implements the Payloader interface.
 func (b *Backend) StorePayload(ctx context.Context, obj objects.TektonObject, rawPayload []byte, signature string, opts config.StorageOpts) error {
-	b.logger.Infof("Storing payload on %s/%s/%s", obj.GetGVK(), obj.GetNamespace(), obj.GetName())
+	logger := logging.FromContext(ctx)
 
-	// Use patch instead of update to prevent race conditions.
-	patchBytes, err := patch.GetAnnotationsPatch(map[string]string{
-		// Base64 encode both the signature and the payload
-		fmt.Sprintf(PayloadAnnotationFormat, opts.ShortKey):   base64.StdEncoding.EncodeToString(rawPayload),
-		fmt.Sprintf(SignatureAnnotationFormat, opts.ShortKey): base64.StdEncoding.EncodeToString([]byte(signature)),
-		fmt.Sprintf(CertAnnotationsFormat, opts.ShortKey):     base64.StdEncoding.EncodeToString([]byte(opts.Cert)),
-		fmt.Sprintf(ChainAnnotationFormat, opts.ShortKey):     base64.StdEncoding.EncodeToString([]byte(opts.Chain)),
-	})
-	if err != nil {
-		return err
+	store := &Storer{
+		client: b.pipelineclientset,
+		key:    opts.ShortKey,
 	}
-
-	patchErr := obj.Patch(ctx, b.pipelineclientset, patchBytes)
-	if patchErr != nil {
-		return patchErr
+	if _, err := store.Store(ctx, &api.StoreRequest[objects.TektonObject, *intoto.Statement]{
+		Object:   obj,
+		Artifact: obj,
+		// We don't actually use payload - we store the raw bundle values directly.
+		Payload: nil,
+		Bundle: &signing.Bundle{
+			Content:   rawPayload,
+			Signature: []byte(signature),
+			Cert:      []byte(opts.Cert),
+			Chain:     []byte(opts.Chain),
+		},
+	}); err != nil {
+		logger.Errorf("error writing to Tekton object: %w", err)
+		return err
 	}
 	return nil
 }
@@ -78,12 +83,13 @@ func (b *Backend) Type() string {
 
 // retrieveAnnotationValue retrieve the value of an annotation and base64 decode it if needed.
 func (b *Backend) retrieveAnnotationValue(ctx context.Context, obj objects.TektonObject, annotationKey string, decode bool) (string, error) {
-	b.logger.Infof("Retrieving annotation %q on %s/%s/%s", annotationKey, obj.GetGVK(), obj.GetNamespace(), obj.GetName())
+	logger := logging.FromContext(ctx)
+	logger.Infof("Retrieving annotation %q on %s/%s/%s", annotationKey, obj.GetGVK(), obj.GetNamespace(), obj.GetName())
 
 	var annotationValue string
 	annotations, err := obj.GetLatestAnnotations(ctx, b.pipelineclientset)
 	if err != nil {
-		return "", fmt.Errorf("error retrieving the annotation value for the key %q: %s", annotationKey, err)
+		return "", fmt.Errorf("error retrieving the annotation value for the key %q: %w", annotationKey, err)
 	}
 	val, ok := annotations[annotationKey]
 
@@ -93,7 +99,7 @@ func (b *Backend) retrieveAnnotationValue(ctx context.Context, obj objects.Tekto
 		if decode {
 			decodedAnnotation, err := base64.StdEncoding.DecodeString(val)
 			if err != nil {
-				return "", fmt.Errorf("error decoding the annotation value for the key %q: %s", annotationKey, err)
+				return "", fmt.Errorf("error decoding the annotation value for the key %q: %w", annotationKey, err)
 			}
 			annotationValue = string(decodedAnnotation)
 		} else {
@@ -106,7 +112,8 @@ func (b *Backend) retrieveAnnotationValue(ctx context.Context, obj objects.Tekto
 
 // RetrieveSignature retrieve the signature stored in the taskrun.
 func (b *Backend) RetrieveSignatures(ctx context.Context, obj objects.TektonObject, opts config.StorageOpts) (map[string][]string, error) {
-	b.logger.Infof("Retrieving signature on %s/%s/%s", obj.GetGVK(), obj.GetNamespace(), obj.GetName())
+	logger := logging.FromContext(ctx)
+	logger.Infof("Retrieving signature on %s/%s/%s", obj.GetGVK(), obj.GetNamespace(), obj.GetName())
 	signatureAnnotation := sigName(opts)
 	signature, err := b.retrieveAnnotationValue(ctx, obj, signatureAnnotation, true)
 	if err != nil {
@@ -119,7 +126,8 @@ func (b *Backend) RetrieveSignatures(ctx context.Context, obj objects.TektonObje
 
 // RetrievePayload retrieve the payload stored in the taskrun.
 func (b *Backend) RetrievePayloads(ctx context.Context, obj objects.TektonObject, opts config.StorageOpts) (map[string]string, error) {
-	b.logger.Infof("Retrieving payload on %s/%s/%s", obj.GetGVK(), obj.GetNamespace(), obj.GetName())
+	logger := logging.FromContext(ctx)
+	logger.Infof("Retrieving payload on %s/%s/%s", obj.GetGVK(), obj.GetNamespace(), obj.GetName())
 	payloadAnnotation := payloadName(opts)
 	payload, err := b.retrieveAnnotationValue(ctx, obj, payloadAnnotation, true)
 	if err != nil {
@@ -136,4 +144,44 @@ func sigName(opts config.StorageOpts) string {
 
 func payloadName(opts config.StorageOpts) string {
 	return fmt.Sprintf(PayloadAnnotationFormat, opts.ShortKey)
+}
+
+type Storer struct {
+	client versioned.Interface
+	// optional key override. If not specified, the UID of the object is used.
+	key string
+}
+
+var (
+	_ api.Storer[objects.TektonObject, *intoto.Statement] = &Storer{}
+)
+
+// Store stores the statement in the TaskRun metadata as an annotation.
+func (s *Storer) Store(ctx context.Context, req *api.StoreRequest[objects.TektonObject, *intoto.Statement]) (*api.StoreResponse, error) {
+	logger := logging.FromContext(ctx)
+
+	obj := req.Object
+	logger.Infof("Storing payload on %s/%s/%s", obj.GetGVK(), obj.GetNamespace(), obj.GetName())
+
+	// Use patch instead of update to prevent race conditions.
+	key := s.key
+	if key == "" {
+		key = string(obj.GetUID())
+	}
+	patchBytes, err := patch.GetAnnotationsPatch(map[string]string{
+		// Base64 encode both the signature and the payload
+		fmt.Sprintf(PayloadAnnotationFormat, key):   base64.StdEncoding.EncodeToString(req.Bundle.Content),
+		fmt.Sprintf(SignatureAnnotationFormat, key): base64.StdEncoding.EncodeToString(req.Bundle.Signature),
+		fmt.Sprintf(CertAnnotationsFormat, key):     base64.StdEncoding.EncodeToString(req.Bundle.Cert),
+		fmt.Sprintf(ChainAnnotationFormat, key):     base64.StdEncoding.EncodeToString(req.Bundle.Chain),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	patchErr := obj.Patch(ctx, s.client, patchBytes)
+	if patchErr != nil {
+		return nil, patchErr
+	}
+	return &api.StoreResponse{}, nil
 }

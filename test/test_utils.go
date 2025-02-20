@@ -35,15 +35,18 @@ import (
 	chainsstorage "github.com/tektoncd/chains/pkg/chains/storage"
 	"github.com/tektoncd/chains/pkg/config"
 	"github.com/tektoncd/chains/pkg/test/tekton"
-	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	pipelineclientset "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"knative.dev/pkg/logging"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 )
 
-func getTr(ctx context.Context, t *testing.T, c pipelineclientset.Interface, name, ns string) (tr *v1beta1.TaskRun) {
+func getTr(ctx context.Context, t *testing.T, c pipelineclientset.Interface, name, ns string) (tr *v1.TaskRun) {
 	t.Helper()
-	tr, err := c.TektonV1beta1().TaskRuns(ns).Get(ctx, name, metav1.GetOptions{})
+	tr, err := c.TektonV1().TaskRuns(ns).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		t.Error(err)
 	}
@@ -113,20 +116,21 @@ func signed(obj objects.TektonObject) bool {
 	return ok
 }
 
-var simpleTaskspec = v1beta1.TaskSpec{
-	Steps: []v1beta1.Step{{
+var simpleTaskspec = v1.TaskSpec{
+	Steps: []v1.Step{{
 		Image:  "busybox",
 		Script: "echo true",
 	}},
 }
 
-var simpleTaskRun = v1beta1.TaskRun{
+var simpleTaskRun = v1.TaskRun{
 	ObjectMeta: metav1.ObjectMeta{GenerateName: "test-task-"},
-	Spec:       v1beta1.TaskRunSpec{TaskSpec: &simpleTaskspec},
+	Spec:       v1.TaskRunSpec{TaskSpec: &simpleTaskspec},
 }
 
 func makeBucket(t *testing.T, client *storage.Client) (string, func()) {
 	// Make a bucket
+	t.Helper()
 	rand.Seed(time.Now().UnixNano())
 	testBucketName := fmt.Sprintf("tekton-chains-e2e-%d", rand.Intn(1000))
 
@@ -158,6 +162,7 @@ func makeBucket(t *testing.T, client *storage.Client) (string, func()) {
 }
 
 func readObj(t *testing.T, bucket, name string, client *storage.Client) io.Reader {
+	t.Helper()
 	ctx := context.Background()
 	reader, err := client.Bucket(bucket).Object(name).NewReader(ctx)
 	if err != nil {
@@ -167,9 +172,36 @@ func readObj(t *testing.T, bucket, name string, client *storage.Client) io.Reade
 }
 
 func setConfigMap(ctx context.Context, t *testing.T, c *clients, data map[string]string) func() {
+	t.Helper()
 	// Change the config to be GCS storage with this bucket.
 	// Note(rgreinho): This comment does not look right...
-	cm, err := c.KubeClient.CoreV1().ConfigMaps("tekton-chains").Get(ctx, "chains-config", metav1.GetOptions{})
+	clean := updateConfigMap(ctx, t, c, data, namespace, "chains-config")
+
+	err := restartChainsControllerPod(ctx, c.KubeClient, 300*time.Second)
+	if err != nil {
+		t.Fatalf("Failed to restart the pod: %v", err)
+	}
+
+	return clean
+}
+
+func setupPipelinesFeatureFlags(ctx context.Context, t *testing.T, c *clients, data map[string]string) func() {
+	t.Helper()
+	pipelinesNs := "tekton-pipelines"
+
+	clean := updateConfigMap(ctx, t, c, data, pipelinesNs, "feature-flags")
+
+	err := restartControllerPod(ctx, c.KubeClient, 300*time.Second, pipelinesNs, "app.kubernetes.io/component=controller")
+	if err != nil {
+		t.Fatalf("Failed to restart the pod: %v", err)
+	}
+
+	return clean
+}
+
+func updateConfigMap(ctx context.Context, t *testing.T, c *clients, data map[string]string, ns, configMapName string) func() {
+	t.Helper()
+	cm, err := c.KubeClient.CoreV1().ConfigMaps(ns).Get(ctx, configMapName, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,11 +219,10 @@ func setConfigMap(ctx context.Context, t *testing.T, c *clients, data map[string
 	for k, v := range data {
 		cm.Data[k] = v
 	}
-	cm, err = c.KubeClient.CoreV1().ConfigMaps("tekton-chains").Update(ctx, cm, metav1.UpdateOptions{})
+	cm, err = c.KubeClient.CoreV1().ConfigMaps(ns).Update(ctx, cm, metav1.UpdateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(30 * time.Second) // https://github.com/tektoncd/chains/issues/664
 
 	return func() {
 		for k := range data {
@@ -200,31 +231,33 @@ func setConfigMap(ctx context.Context, t *testing.T, c *clients, data map[string
 		for k, v := range oldData {
 			cm.Data[k] = v
 		}
-		if _, err := c.KubeClient.CoreV1().ConfigMaps("tekton-chains").Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		if _, err := c.KubeClient.CoreV1().ConfigMaps(ns).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
 			t.Log(err)
 		}
 	}
 }
 
 func printDebugging(t *testing.T, obj objects.TektonObject) {
+	t.Helper()
 	kind := obj.GetObjectKind().GroupVersionKind().Kind
 
 	t.Logf("============================== %s logs ==============================", obj.GetGVK())
-	output, _ := exec.Command("tkn", kind, "logs", "-n", obj.GetNamespace(), obj.GetName()).CombinedOutput()
+	output, _ := exec.Command("tkn", strings.ToLower(kind), "logs", "-n", obj.GetNamespace(), obj.GetName()).CombinedOutput()
 	t.Log(string(output))
 
 	t.Logf("============================== %s describe ==============================", obj.GetGVK())
-	output, _ = exec.Command("tkn", kind, "describe", "-n", obj.GetNamespace(), obj.GetName()).CombinedOutput()
+	output, _ = exec.Command("tkn", strings.ToLower(kind), "describe", "-n", obj.GetNamespace(), obj.GetName()).CombinedOutput()
 	t.Log(string(output))
 
 	t.Log("============================== chains controller logs ==============================")
-	output, _ = exec.Command("kubectl", "logs", "deploy/tekton-chains-controller", "-n", "tekton-chains").CombinedOutput()
+	output, _ = exec.Command("kubectl", "logs", "deploy/tekton-chains-controller", "-n", namespace).CombinedOutput()
 	t.Log(string(output))
 }
 
 func verifySignature(ctx context.Context, t *testing.T, c *clients, obj objects.TektonObject) {
+	t.Helper()
 	// Retrieve the configuration.
-	chainsConfig, err := c.KubeClient.CoreV1().ConfigMaps("tekton-chains").Get(ctx, "chains-config", metav1.GetOptions{})
+	chainsConfig, err := c.KubeClient.CoreV1().ConfigMaps(namespace).Get(ctx, "chains-config", metav1.GetOptions{})
 	if err != nil {
 		t.Errorf("error retrieving tekton chains configmap: %s", err)
 		return
@@ -235,11 +268,8 @@ func verifySignature(ctx context.Context, t *testing.T, c *clients, obj objects.
 		return
 	}
 
-	// Prepare the logger.
-	logger := logging.FromContext(ctx)
-
 	// Initialize the backend.
-	backends, err := chainsstorage.InitializeBackends(ctx, c.PipelineClient, c.KubeClient, logger, *cfg)
+	backends, err := chainsstorage.InitializeBackends(ctx, c.PipelineClient, c.KubeClient, *cfg)
 	if err != nil {
 		t.Errorf("error initializing backends: %s", err)
 		return
@@ -248,11 +278,17 @@ func verifySignature(ctx context.Context, t *testing.T, c *clients, obj objects.
 	var configuredBackends []string
 	var key string
 	switch obj.GetObject().(type) {
-	case *objects.TaskRunObject:
-		configuredBackends = cfg.Artifacts.TaskRuns.StorageBackend.List()
+	case *objects.TaskRunObjectV1:
+		configuredBackends = sets.List[string](cfg.Artifacts.TaskRuns.StorageBackend)
 		key = fmt.Sprintf("taskrun-%s", obj.GetUID())
-	case *objects.PipelineRunObject:
-		configuredBackends = cfg.Artifacts.PipelineRuns.StorageBackend.List()
+	case *objects.PipelineRunObjectV1:
+		configuredBackends = sets.List[string](cfg.Artifacts.PipelineRuns.StorageBackend)
+		key = fmt.Sprintf("pipelinerun-%s", obj.GetUID())
+	case *objects.TaskRunObjectV1Beta1:
+		configuredBackends = sets.List[string](cfg.Artifacts.TaskRuns.StorageBackend)
+		key = fmt.Sprintf("taskrun-%s", obj.GetUID())
+	case *objects.PipelineRunObjectV1Beta1:
+		configuredBackends = sets.List[string](cfg.Artifacts.PipelineRuns.StorageBackend)
 		key = fmt.Sprintf("pipelinerun-%s", obj.GetUID())
 	}
 
@@ -283,4 +319,38 @@ func verifySignature(ctx context.Context, t *testing.T, c *clients, obj objects.
 			}
 		}
 	}
+}
+
+// restartChainsControllerPod restarts the pod running Chains
+// it then waits for a given timeout for the pod to resume running state
+func restartChainsControllerPod(ctx context.Context, c kubernetes.Interface, timeout time.Duration) error {
+	return restartControllerPod(ctx, c, timeout, namespace, "app.kubernetes.io/component=controller")
+}
+
+func restartControllerPod(ctx context.Context, c kubernetes.Interface, timeout time.Duration, ns, labelSelector string) error {
+	pods, err := c.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return err
+	}
+	pod := pods.Items[0]
+	podUid := pod.UID
+	gracePeriodSeconds := int64(0)
+	err = c.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{GracePeriodSeconds: &gracePeriodSeconds})
+	if err != nil {
+		return err
+	}
+
+	return wait.PollUntilContextTimeout(ctx, 2*time.Second, timeout, true, func(context.Context) (done bool, err error) {
+		pods, err := c.CoreV1().Pods(ns).List(context.Background(), metav1.ListOptions{LabelSelector: labelSelector})
+		if err != nil {
+			return false, err
+		}
+		if len(pods.Items) > 0 {
+			pod := pods.Items[0]
+			if pod.UID != podUid {
+				return pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready, nil
+			}
+		}
+		return false, nil
+	})
 }

@@ -15,6 +15,7 @@
 package util
 
 import (
+	"crypto"
 	"fmt"
 	"strings"
 )
@@ -22,12 +23,57 @@ import (
 // PrefixSHA sets the prefix of a sha hash to match how it is stored based on the length.
 func PrefixSHA(sha string) string {
 	var prefix string
-	if !strings.HasPrefix(sha, "sha256:") && !strings.HasPrefix(sha, "sha1:") {
-		if len(sha) == 40 {
-			prefix = "sha1:"
-		} else {
-			prefix = "sha256:"
+	var components = strings.Split(sha, ":")
+
+	if len(components) == 2 {
+		return sha
+	}
+
+	switch len(sha) {
+	case 40:
+		prefix = "sha1:"
+	case 64:
+		prefix = "sha256:"
+	case 96:
+		prefix = "sha384:"
+	case 128:
+		prefix = "sha512:"
+	}
+
+	return fmt.Sprintf("%v%v", prefix, sha)
+}
+
+func UnprefixSHA(sha string) (crypto.Hash, string) {
+	components := strings.Split(sha, ":")
+
+	if len(components) == 2 {
+		prefix := components[0]
+		sha = components[1]
+
+		switch prefix {
+		case "sha1":
+			return crypto.SHA1, sha
+		case "sha256":
+			return crypto.SHA256, sha
+		case "sha384":
+			return crypto.SHA384, sha
+		case "sha512":
+			return crypto.SHA512, sha
+		default:
+			return crypto.Hash(0), ""
 		}
 	}
-	return fmt.Sprintf("%v%v", prefix, sha)
+
+	switch len(sha) {
+	case 40:
+		return crypto.SHA1, sha
+	case 64:
+		return crypto.SHA256, sha
+	case 96:
+		return crypto.SHA384, sha
+	case 128:
+		return crypto.SHA512, sha
+	}
+
+	return crypto.Hash(0), ""
 }

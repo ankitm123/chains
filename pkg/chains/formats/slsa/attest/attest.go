@@ -21,9 +21,11 @@ import (
 	"strings"
 
 	slsa "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
+	"github.com/tektoncd/chains/pkg/artifacts"
+	"github.com/tektoncd/chains/pkg/chains/objects"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -50,18 +52,23 @@ func Step(step *v1beta1.Step, stepState *v1beta1.StepState) StepAttestation {
 	attestation.Arguments = step.Args
 
 	env := map[string]interface{}{}
-	env["image"] = stepState.ImageID
+	env["image"] = artifacts.OCIScheme + strings.TrimPrefix(stepState.ImageID, "docker-pullable://")
 	env["container"] = stepState.Name
 	attestation.Environment = env
 
 	return attestation
 }
 
-func Invocation(source *v1beta1.ConfigSource, params []v1beta1.Param, paramSpecs []v1beta1.ParamSpec, meta metav1.Object) slsa.ProvenanceInvocation {
+func Invocation(obj objects.TektonObject, params []v1beta1.Param, paramSpecs []v1beta1.ParamSpec) slsa.ProvenanceInvocation {
+	var source *v1.RefSource
+	if p := obj.GetProvenance(); p != nil {
+		source = p.RefSource
+	}
 	i := slsa.ProvenanceInvocation{
 		ConfigSource: convertConfigSource(source),
 	}
-	iParams := make(map[string]v1beta1.ArrayOrString)
+
+	iParams := make(map[string]v1beta1.ParamValue)
 
 	// get implicit parameters from defaults
 	for _, p := range paramSpecs {
@@ -76,11 +83,10 @@ func Invocation(source *v1beta1.ConfigSource, params []v1beta1.Param, paramSpecs
 	}
 
 	i.Parameters = iParams
-
 	environment := map[string]map[string]string{}
 
 	annotations := map[string]string{}
-	for name, value := range meta.GetAnnotations() {
+	for name, value := range obj.GetAnnotations() {
 		// Ignore annotations that are not relevant to provenance information
 		if name == corev1.LastAppliedConfigAnnotation || strings.HasPrefix(name, "chains.tekton.dev/") {
 			continue
@@ -91,7 +97,7 @@ func Invocation(source *v1beta1.ConfigSource, params []v1beta1.Param, paramSpecs
 		environment["annotations"] = annotations
 	}
 
-	labels := meta.GetLabels()
+	labels := obj.GetLabels()
 	if len(labels) > 0 {
 		environment["labels"] = labels
 	}
@@ -103,7 +109,7 @@ func Invocation(source *v1beta1.ConfigSource, params []v1beta1.Param, paramSpecs
 	return i
 }
 
-func convertConfigSource(source *v1beta1.ConfigSource) slsa.ConfigSource {
+func convertConfigSource(source *v1.RefSource) slsa.ConfigSource {
 	if source == nil {
 		return slsa.ConfigSource{}
 	}
@@ -115,12 +121,17 @@ func convertConfigSource(source *v1beta1.ConfigSource) slsa.ConfigSource {
 }
 
 // supports the SPDX format which is recommended by in-toto
-// ref: https://spdx.dev/spdx-specification-21-web-version/#h.49x2ik5
+// ref: https://spdx.github.io/spdx-spec/v2-draft/package-information/#773-examples
 // ref: https://github.com/in-toto/attestation/blob/849867bee97e33678f61cc6bd5da293097f84c25/spec/field_types.md
 func SPDXGit(url, revision string) string {
-	prefix := "git+"
-	if revision == "" {
-		return prefix + url + ".git"
+	if !strings.HasPrefix(url, artifacts.GitSchemePrefix) {
+		url = artifacts.GitSchemePrefix + url
 	}
-	return prefix + url + fmt.Sprintf("@%s", revision)
+	if !strings.HasSuffix(url, ".git") {
+		url = url + ".git"
+	}
+	if revision == "" {
+		return url
+	}
+	return url + fmt.Sprintf("@%s", revision)
 }

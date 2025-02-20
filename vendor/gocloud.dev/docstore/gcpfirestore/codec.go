@@ -23,8 +23,8 @@ import (
 	"reflect"
 	"time"
 
+	pb "cloud.google.com/go/firestore/apiv1/firestorepb"
 	"gocloud.dev/docstore/driver"
-	pb "google.golang.org/genproto/googleapis/firestore/v1"
 	"google.golang.org/genproto/googleapis/type/latlng"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -277,6 +277,7 @@ func (d decoder) DecodeList(f func(int, driver.Decoder) bool) {
 		}
 	}
 }
+
 func (d decoder) MapLen() (int, bool) {
 	m := d.pv.GetMapValue()
 	if m == nil {
@@ -284,6 +285,7 @@ func (d decoder) MapLen() (int, bool) {
 	}
 	return len(m.Fields), true
 }
+
 func (d decoder) DecodeMap(f func(string, driver.Decoder, bool) bool) {
 	for k, v := range d.pv.GetMapValue().Fields {
 		if !f(k, decoder{v}, true) {

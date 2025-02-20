@@ -21,17 +21,19 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sigstore/sigstore/pkg/tuf"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	cm "knative.dev/pkg/configmap"
 )
 
 type Config struct {
-	Artifacts    ArtifactConfigs
-	Storage      StorageConfigs
-	Signers      SignerConfigs
-	Builder      BuilderConfig
-	Transparency TransparencyConfig
+	Artifacts       ArtifactConfigs
+	Storage         StorageConfigs
+	Signers         SignerConfigs
+	Builder         BuilderConfig
+	Transparency    TransparencyConfig
+	BuildDefinition BuildDefinitionConfig
 }
 
 // ArtifactConfigs contains the configuration for how to sign/store/format the signatures for each artifact type
@@ -43,9 +45,10 @@ type ArtifactConfigs struct {
 
 // Artifact contains the configuration for how to sign/store/format the signatures for a single artifact
 type Artifact struct {
-	Format         string
-	StorageBackend sets.String
-	Signer         string
+	Format                string
+	StorageBackend        sets.Set[string]
+	Signer                string
+	DeepInspectionEnabled bool
 }
 
 // StorageConfigs contains the configuration to instantiate different storage providers
@@ -68,11 +71,17 @@ type BuilderConfig struct {
 	ID string
 }
 
+type BuildDefinitionConfig struct {
+	BuildType string
+}
+
 type X509Signer struct {
-	FulcioEnabled    bool
-	FulcioAddr       string
-	FulcioOIDCIssuer string
-	FulcioProvider   string
+	FulcioEnabled     bool
+	FulcioAddr        string
+	FulcioOIDCIssuer  string
+	FulcioProvider    string
+	IdentityTokenFile string
+	TUFMirrorURL      string
 }
 
 type KMSSigner struct {
@@ -82,10 +91,11 @@ type KMSSigner struct {
 
 // KMSAuth configures authentication to the KMS server
 type KMSAuth struct {
-	Address string
-	Token   string
-	OIDC    KMSAuthOIDC
-	Spire   KMSAuthSpire
+	Address   string
+	Token     string
+	TokenPath string
+	OIDC      KMSAuthOIDC
+	Spire     KMSAuthSpire
 }
 
 // KMSAuthOIDC configures settings to authenticate with OIDC
@@ -113,7 +123,10 @@ type TektonStorageConfig struct {
 }
 
 type DocDBStorageConfig struct {
-	URL string
+	URL                string
+	MongoServerURL     string
+	MongoServerURLDir  string
+	MongoServerURLPath string
 }
 
 type GrafeasConfig struct {
@@ -147,25 +160,26 @@ const (
 	taskrunStorageKey = "artifacts.taskrun.storage"
 	taskrunSignerKey  = "artifacts.taskrun.signer"
 
-	pipelinerunFormatKey  = "artifacts.pipelinerun.format"
-	pipelinerunStorageKey = "artifacts.pipelinerun.storage"
-	pipelinerunSignerKey  = "artifacts.pipelinerun.signer"
+	pipelinerunFormatKey               = "artifacts.pipelinerun.format"
+	pipelinerunStorageKey              = "artifacts.pipelinerun.storage"
+	pipelinerunSignerKey               = "artifacts.pipelinerun.signer"
+	pipelinerunEnableDeepInspectionKey = "artifacts.pipelinerun.enable-deep-inspection"
 
 	ociFormatKey  = "artifacts.oci.format"
 	ociStorageKey = "artifacts.oci.storage"
 	ociSignerKey  = "artifacts.oci.signer"
 
-	gcsBucketKey             = "storage.gcs.bucket"
-	ociRepositoryKey         = "storage.oci.repository"
-	ociRepositoryInsecureKey = "storage.oci.repository.insecure"
-	docDBUrlKey              = "storage.docdb.url"
-	grafeasProjectIDKey      = "storage.grafeas.projectid"
-	grafeasNoteIDKey         = "storage.grafeas.noteid"
-	grafeasNoteHint          = "storage.grafeas.notehint"
+	gcsBucketKey               = "storage.gcs.bucket"
+	ociRepositoryKey           = "storage.oci.repository"
+	ociRepositoryInsecureKey   = "storage.oci.repository.insecure"
+	docDBUrlKey                = "storage.docdb.url"
+	docDBMongoServerURLKey     = "storage.docdb.mongo-server-url"
+	docDBMongoServerURLDirKey  = "storage.docdb.mongo-server-url-dir"
+	docDBMongoServerURLPathKey = "storage.docdb.mongo-server-url-path"
 
-	// No config needed for Tekton object storage
-
-	// No config needed for x509 signer
+	grafeasProjectIDKey = "storage.grafeas.projectid"
+	grafeasNoteIDKey    = "storage.grafeas.noteid"
+	grafeasNoteHint     = "storage.grafeas.notehint"
 
 	// PubSub - General
 	pubsubProvider = "storage.pubsub.provider"
@@ -181,21 +195,27 @@ const (
 	kmsAuthAddress       = "signers.kms.auth.address"
 	kmsAuthToken         = "signers.kms.auth.token"
 	kmsAuthOIDCPath      = "signers.kms.auth.oidc.path"
+	kmsAuthTokenPath     = "signers.kms.auth.token-path" // #nosec G101
 	kmsAuthOIDCRole      = "signers.kms.auth.oidc.role"
 	kmsAuthSpireSock     = "signers.kms.auth.spire.sock"
 	kmsAuthSpireAudience = "signers.kms.auth.spire.audience"
 
 	// Fulcio
-	x509SignerFulcioEnabled    = "signers.x509.fulcio.enabled"
-	x509SignerFulcioAddr       = "signers.x509.fulcio.address"
-	x509SignerFulcioOIDCIssuer = "signers.x509.fulcio.issuer"
-	x509SignerFulcioProvider   = "signers.x509.fulcio.provider"
+	x509SignerFulcioEnabled     = "signers.x509.fulcio.enabled"
+	x509SignerFulcioAddr        = "signers.x509.fulcio.address"
+	x509SignerFulcioOIDCIssuer  = "signers.x509.fulcio.issuer"
+	x509SignerFulcioProvider    = "signers.x509.fulcio.provider"
+	x509SignerIdentityTokenFile = "signers.x509.identity.token.file"
+	x509SignerTUFMirrorURL      = "signers.x509.tuf.mirror.url"
 
 	// Builder config
 	builderIDKey = "builder.id"
 
 	transparencyEnabledKey = "transparency.enabled"
 	transparencyURLKey     = "transparency.url"
+
+	// Build type
+	buildTypeKey = "builddefinition.buildtype"
 
 	ChainsConfig = "chains-config"
 )
@@ -209,17 +229,18 @@ func defaultConfig() *Config {
 		Artifacts: ArtifactConfigs{
 			TaskRuns: Artifact{
 				Format:         "in-toto",
-				StorageBackend: sets.NewString("tekton"),
+				StorageBackend: sets.New[string]("tekton"),
 				Signer:         "x509",
 			},
 			PipelineRuns: Artifact{
-				Format:         "in-toto",
-				StorageBackend: sets.NewString("tekton"),
-				Signer:         "x509",
+				Format:                "in-toto",
+				StorageBackend:        sets.New[string]("tekton"),
+				Signer:                "x509",
+				DeepInspectionEnabled: false,
 			},
 			OCI: Artifact{
 				Format:         "simplesigning",
-				StorageBackend: sets.NewString("oci"),
+				StorageBackend: sets.New[string]("oci"),
 				Signer:         "x509",
 			},
 		},
@@ -230,6 +251,7 @@ func defaultConfig() *Config {
 			X509: X509Signer{
 				FulcioAddr:       "https://fulcio.sigstore.dev",
 				FulcioOIDCIssuer: "https://oauth2.sigstore.dev/auth",
+				TUFMirrorURL:     tuf.DefaultRemoteRoot,
 			},
 		},
 		Storage: StorageConfigs{
@@ -239,6 +261,9 @@ func defaultConfig() *Config {
 		},
 		Builder: BuilderConfig{
 			ID: "https://tekton.dev/chains/v2",
+		},
+		BuildDefinition: BuildDefinitionConfig{
+			BuildType: "https://tekton.dev/chains/v2/slsa",
 		},
 	}
 }
@@ -250,18 +275,19 @@ func NewConfigFromMap(data map[string]string) (*Config, error) {
 	if err := cm.Parse(data,
 		// Artifact-specific configs
 		// TaskRuns
-		asString(taskrunFormatKey, &cfg.Artifacts.TaskRuns.Format, "in-toto", "slsa/v1", "slsa/v2alpha1"),
-		asStringSet(taskrunStorageKey, &cfg.Artifacts.TaskRuns.StorageBackend, sets.NewString("tekton", "oci", "gcs", "docdb", "grafeas", "kafka")),
+		asString(taskrunFormatKey, &cfg.Artifacts.TaskRuns.Format, "in-toto", "slsa/v1", "slsa/v2alpha3", "slsa/v2alpha4"),
+		asStringSet(taskrunStorageKey, &cfg.Artifacts.TaskRuns.StorageBackend, sets.New[string]("tekton", "oci", "gcs", "docdb", "grafeas", "kafka")),
 		asString(taskrunSignerKey, &cfg.Artifacts.TaskRuns.Signer, "x509", "kms"),
 
 		// PipelineRuns
-		asString(pipelinerunFormatKey, &cfg.Artifacts.PipelineRuns.Format, "in-toto", "slsa/v1"),
-		asStringSet(pipelinerunStorageKey, &cfg.Artifacts.PipelineRuns.StorageBackend, sets.NewString("tekton", "oci", "grafeas")),
+		asString(pipelinerunFormatKey, &cfg.Artifacts.PipelineRuns.Format, "in-toto", "slsa/v1", "slsa/v2alpha3", "slsa/v2alpha4"),
+		asStringSet(pipelinerunStorageKey, &cfg.Artifacts.PipelineRuns.StorageBackend, sets.New[string]("tekton", "oci", "gcs", "docdb", "grafeas")),
 		asString(pipelinerunSignerKey, &cfg.Artifacts.PipelineRuns.Signer, "x509", "kms"),
+		asBool(pipelinerunEnableDeepInspectionKey, &cfg.Artifacts.PipelineRuns.DeepInspectionEnabled),
 
 		// OCI
 		asString(ociFormatKey, &cfg.Artifacts.OCI.Format, "simplesigning"),
-		asStringSet(ociStorageKey, &cfg.Artifacts.OCI.StorageBackend, sets.NewString("tekton", "oci", "gcs", "docdb", "grafeas", "kafka")),
+		asStringSet(ociStorageKey, &cfg.Artifacts.OCI.StorageBackend, sets.New[string]("tekton", "oci", "gcs", "docdb", "grafeas", "kafka")),
 		asString(ociSignerKey, &cfg.Artifacts.OCI.Signer, "x509", "kms"),
 
 		// PubSub - General
@@ -276,6 +302,9 @@ func NewConfigFromMap(data map[string]string) (*Config, error) {
 		asString(ociRepositoryKey, &cfg.Storage.OCI.Repository),
 		asBool(ociRepositoryInsecureKey, &cfg.Storage.OCI.Insecure),
 		asString(docDBUrlKey, &cfg.Storage.DocDB.URL),
+		asString(docDBMongoServerURLKey, &cfg.Storage.DocDB.MongoServerURL),
+		asString(docDBMongoServerURLDirKey, &cfg.Storage.DocDB.MongoServerURLDir),
+		asString(docDBMongoServerURLPathKey, &cfg.Storage.DocDB.MongoServerURLPath),
 		asString(grafeasProjectIDKey, &cfg.Storage.Grafeas.ProjectID),
 		asString(grafeasNoteIDKey, &cfg.Storage.Grafeas.NoteID),
 		asString(grafeasNoteHint, &cfg.Storage.Grafeas.NoteHint),
@@ -287,6 +316,7 @@ func NewConfigFromMap(data map[string]string) (*Config, error) {
 		asString(kmsSignerKMSRef, &cfg.Signers.KMS.KMSRef),
 		asString(kmsAuthAddress, &cfg.Signers.KMS.Auth.Address),
 		asString(kmsAuthToken, &cfg.Signers.KMS.Auth.Token),
+		asString(kmsAuthTokenPath, &cfg.Signers.KMS.Auth.TokenPath),
 		asString(kmsAuthOIDCPath, &cfg.Signers.KMS.Auth.OIDC.Path),
 		asString(kmsAuthOIDCRole, &cfg.Signers.KMS.Auth.OIDC.Role),
 		asString(kmsAuthSpireSock, &cfg.Signers.KMS.Auth.Spire.Sock),
@@ -297,9 +327,14 @@ func NewConfigFromMap(data map[string]string) (*Config, error) {
 		asString(x509SignerFulcioAddr, &cfg.Signers.X509.FulcioAddr),
 		asString(x509SignerFulcioOIDCIssuer, &cfg.Signers.X509.FulcioOIDCIssuer),
 		asString(x509SignerFulcioProvider, &cfg.Signers.X509.FulcioProvider),
+		asString(x509SignerIdentityTokenFile, &cfg.Signers.X509.IdentityTokenFile),
+		asString(x509SignerTUFMirrorURL, &cfg.Signers.X509.TUFMirrorURL),
 
 		// Build config
 		asString(builderIDKey, &cfg.Builder.ID),
+
+		// Build type
+		asString(buildTypeKey, &cfg.BuildDefinition.BuildType, "https://tekton.dev/chains/v2/slsa", "https://tekton.dev/chains/v2/slsa-tekton"),
 	); err != nil {
 		return nil, fmt.Errorf("failed to parse data: %w", err)
 	}
@@ -357,9 +392,9 @@ func asString(key string, target *string, values ...string) cm.ParseFunc {
 			return nil
 		}
 		if len(values) > 0 {
-			vals := sets.NewString(values...)
+			vals := sets.New[string](values...)
 			if !vals.Has(raw) {
-				return fmt.Errorf("invalid value %q wanted one of %v", raw, vals.List())
+				return fmt.Errorf("invalid value %q wanted one of %v", raw, sets.List[string](vals))
 			}
 		}
 		*target = raw
@@ -367,12 +402,12 @@ func asString(key string, target *string, values ...string) cm.ParseFunc {
 	}
 }
 
-// asStringSet parses the value at key as a sets.String (split by ',') into the target, if it exists.
-func asStringSet(key string, target *sets.String, allowed sets.String) cm.ParseFunc {
+// asStringSet parses the value at key as a sets.Set[string] (split by ',') into the target, if it exists.
+func asStringSet(key string, target *sets.Set[string], allowed sets.Set[string]) cm.ParseFunc {
 	return func(data map[string]string) error {
 		if raw, ok := data[key]; ok {
 			if raw == "" {
-				*target = sets.NewString("")
+				*target = sets.New[string]("")
 				return nil
 			}
 			splitted := strings.Split(raw, ",")
@@ -380,11 +415,11 @@ func asStringSet(key string, target *sets.String, allowed sets.String) cm.ParseF
 				for i, v := range splitted {
 					splitted[i] = strings.TrimSpace(v)
 					if !allowed.Has(splitted[i]) {
-						return fmt.Errorf("invalid value %q wanted one of %v", splitted[i], allowed.List())
+						return fmt.Errorf("invalid value %q wanted one of %v", splitted[i], sets.List[string](allowed))
 					}
 				}
 			}
-			*target = sets.NewString(splitted...)
+			*target = sets.New[string](splitted...)
 		}
 		return nil
 	}

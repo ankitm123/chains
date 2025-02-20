@@ -74,7 +74,7 @@ func GetLoggingConfig(ctx context.Context) (*logging.Config, error) {
 	// These timeout and retry interval are set by heuristics.
 	// e.g. istio sidecar needs a few seconds to configure the pod network.
 	var lastErr error
-	if err := wait.PollImmediate(1*time.Second, 5*time.Second, func() (bool, error) {
+	if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 5*time.Second, true, func(ctx context.Context) (bool, error) {
 		loggingConfigMap, lastErr = kubeclient.Get(ctx).CoreV1().ConfigMaps(system.Namespace()).Get(ctx, logging.ConfigMapName(), metav1.GetOptions{})
 		return lastErr == nil || apierrors.IsNotFound(lastErr), nil
 	}); err != nil {
@@ -102,6 +102,25 @@ func GetLeaderElectionConfig(ctx context.Context) (*leaderelection.Config, error
 		return nil, err
 	}
 	return leaderelection.NewConfigFromConfigMap(leaderElectionConfigMap)
+}
+
+// GetObservabilityConfig gets the observability config from the (in order):
+// 1. provided context,
+// 2. reading from the API server,
+// 3. defaults (if not found).
+func GetObservabilityConfig(ctx context.Context) (*metrics.ObservabilityConfig, error) {
+	if cfg := metrics.GetObservabilityConfig(ctx); cfg != nil {
+		return cfg, nil
+	}
+
+	observabilityConfigMap, err := kubeclient.Get(ctx).CoreV1().ConfigMaps(system.Namespace()).Get(ctx, metrics.ConfigMapName(), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return metrics.NewObservabilityConfigFromConfigMap(nil)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return metrics.NewObservabilityConfigFromConfigMap(observabilityConfigMap)
 }
 
 // EnableInjectionOrDie enables Knative Injection and starts the informers.
@@ -249,6 +268,8 @@ func MainWithConfig(ctx context.Context, component string, cfg *rest.Config, cto
 			leaderElectionConfig.GetComponentConfig(component))
 	}
 
+	SetupObservabilityOrDie(ctx, component, logger, profilingHandler)
+
 	controllers, webhooks := ControllersAndWebhooksFromCtors(ctx, cmw, ctors...)
 	WatchLoggingConfigOrDie(ctx, cmw, logger, atomicLevel, component)
 	WatchObservabilityConfigOrDie(ctx, cmw, profilingHandler, logger, component)
@@ -269,7 +290,12 @@ func MainWithConfig(ctx context.Context, component string, cfg *rest.Config, cto
 	var wh *webhook.Webhook
 	if len(webhooks) > 0 {
 		// Register webhook metrics
-		webhook.RegisterMetrics()
+		opts := webhook.GetOptions(ctx)
+		if opts != nil {
+			webhook.RegisterMetrics(opts.StatsReporterOptions...)
+		} else {
+			webhook.RegisterMetrics()
+		}
 
 		wh, err = webhook.New(ctx, webhooks)
 		if err != nil {
@@ -292,6 +318,13 @@ func MainWithConfig(ctx context.Context, component string, cfg *rest.Config, cto
 		return controller.StartAll(ctx, controllers...)
 	})
 
+	// Setup default health checks to catch issues with cache sync etc.
+	if !healthProbesDisabled(ctx) {
+		eg.Go(func() error {
+			return injection.ServeHealthProbes(ctx, injection.HealthCheckDefaultPort)
+		})
+	}
+
 	// This will block until either a signal arrives or one of the grouped functions
 	// returns an error.
 	<-egCtx.Done()
@@ -301,6 +334,17 @@ func MainWithConfig(ctx context.Context, component string, cfg *rest.Config, cto
 	if err := eg.Wait(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Errorw("Error while running server", zap.Error(err))
 	}
+}
+
+type healthProbesDisabledKey struct{}
+
+// WithHealthProbesDisabled signals to MainWithContext that it should disable default probes (readiness and liveness).
+func WithHealthProbesDisabled(ctx context.Context) context.Context {
+	return context.WithValue(ctx, healthProbesDisabledKey{}, struct{}{})
+}
+
+func healthProbesDisabled(ctx context.Context) bool {
+	return ctx.Value(healthProbesDisabledKey{}) != nil
 }
 
 func flush(logger *zap.SugaredLogger) {
@@ -325,6 +369,18 @@ func SetupLoggerOrDie(ctx context.Context, component string) (*zap.SugaredLogger
 	}
 
 	return l, level
+}
+
+// SetupObservabilityOrDie sets up the observability using the config from the given context
+// or dies by calling log.Fatalf.
+func SetupObservabilityOrDie(ctx context.Context, component string, logger *zap.SugaredLogger, profilingHandler *profiling.Handler) {
+	observabilityConfig, err := GetObservabilityConfig(ctx)
+	if err != nil {
+		logger.Fatal("Error loading observability configuration: ", err)
+	}
+	observabilityConfigMap := observabilityConfig.GetConfigMap()
+	metrics.ConfigMapWatcher(ctx, component, SecretFetcher(ctx), logger)(&observabilityConfigMap)
+	profilingHandler.UpdateFromConfigMap(&observabilityConfigMap)
 }
 
 // CheckK8sClientMinimumVersionOrDie checks that the hosting Kubernetes cluster

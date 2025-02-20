@@ -21,14 +21,16 @@ import (
 	"github.com/tektoncd/chains/pkg/chains/objects"
 	"github.com/tektoncd/chains/pkg/chains/storage"
 	"github.com/tektoncd/chains/pkg/config"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	versioned "github.com/tektoncd/pipeline/pkg/client/clientset/versioned"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	"knative.dev/pkg/logging"
 )
 
 type Verifier interface {
-	VerifyTaskRun(ctx context.Context, tr *v1beta1.TaskRun) error
+	VerifyTaskRun(ctx context.Context, tr *v1.TaskRun) error
 }
 
 type TaskRunVerifier struct {
@@ -37,7 +39,7 @@ type TaskRunVerifier struct {
 	SecretPath        string
 }
 
-func (tv *TaskRunVerifier) VerifyTaskRun(ctx context.Context, tr *v1beta1.TaskRun) error {
+func (tv *TaskRunVerifier) VerifyTaskRun(ctx context.Context, tr *v1.TaskRun) error {
 	// Get all the things we might need (storage backends, signers and formatters)
 	cfg := *config.FromContext(ctx)
 	logger := logging.FromContext(ctx)
@@ -45,18 +47,27 @@ func (tv *TaskRunVerifier) VerifyTaskRun(ctx context.Context, tr *v1beta1.TaskRu
 
 	// TODO: Hook this up to config.
 	enabledSignableTypes := []artifacts.Signable{
-		&artifacts.TaskRunArtifact{Logger: logger},
-		&artifacts.OCIArtifact{Logger: logger},
+		&artifacts.TaskRunArtifact{},
+		&artifacts.OCIArtifact{},
 	}
 
-	trObj := objects.NewTaskRunObject(tr)
+	var trObj objects.TektonObject
+	if cfg.Artifacts.TaskRuns.Format == "v2alpha3" {
+		trObj = objects.NewTaskRunObjectV1(tr)
+	} else {
+		trV1Beta1 := &v1beta1.TaskRun{} //nolint:staticcheck
+		if err := trV1Beta1.ConvertFrom(ctx, tr); err != nil {
+			return err
+		}
+		trObj = objects.NewTaskRunObjectV1Beta1(trV1Beta1)
+	}
 
 	// Storage
-	allBackends, err := storage.InitializeBackends(ctx, tv.Pipelineclientset, tv.KubeClient, logger, cfg)
+	allBackends, err := storage.InitializeBackends(ctx, tv.Pipelineclientset, tv.KubeClient, cfg)
 	if err != nil {
 		return err
 	}
-	signers := allSigners(ctx, tv.SecretPath, cfg, logger)
+	signers := allSigners(ctx, tv.SecretPath, cfg)
 
 	for _, signableType := range enabledSignableTypes {
 		if !signableType.Enabled(cfg) {
@@ -70,7 +81,7 @@ func (tv *TaskRunVerifier) VerifyTaskRun(ctx context.Context, tr *v1beta1.TaskRu
 			continue
 		}
 
-		for _, backend := range signableType.StorageBackend(cfg).List() {
+		for _, backend := range sets.List[string](signableType.StorageBackend(cfg)) {
 			b := allBackends[backend]
 			signatures, err := b.RetrieveSignatures(ctx, trObj, config.StorageOpts{})
 			if err != nil {

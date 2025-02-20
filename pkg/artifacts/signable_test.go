@@ -14,6 +14,7 @@ limitations under the License.
 package artifacts
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"testing"
@@ -21,8 +22,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/go-containerregistry/pkg/name"
-	slsa "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v0.2"
+	"github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
 	"github.com/tektoncd/chains/pkg/chains/objects"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logtesting "knative.dev/pkg/logging/testing"
@@ -44,7 +46,6 @@ const (
 var ignore = []cmp.Option{cmpopts.IgnoreUnexported(name.Registry{}, name.Repository{}, name.Digest{})}
 
 func TestOCIArtifact_ExtractObjects(t *testing.T) {
-
 	tests := []struct {
 		name string
 		obj  objects.TektonObject
@@ -52,7 +53,7 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 	}{
 		{
 			name: "one image",
-			obj: objects.NewTaskRunObject(&v1beta1.TaskRun{
+			obj: objects.NewTaskRunObjectV1Beta1(&v1beta1.TaskRun{ //nolint:staticcheck
 				TypeMeta: metav1.TypeMeta{
 					Kind: "TaskRun",
 				},
@@ -71,10 +72,10 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 							},
 						},
 						TaskSpec: &v1beta1.TaskSpec{
-							Resources: &v1beta1.TaskResources{
-								Outputs: []v1beta1.TaskResource{
+							Resources: &v1beta1.TaskResources{ //nolint:staticcheck
+								Outputs: []v1beta1.TaskResource{ //nolint:staticcheck
 									{
-										ResourceDeclaration: v1beta1.ResourceDeclaration{
+										ResourceDeclaration: v1beta1.ResourceDeclaration{ //nolint:staticcheck
 											Name: "my-image",
 											Type: "image",
 										},
@@ -89,7 +90,7 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 		},
 		{
 			name: "two images",
-			obj: objects.NewTaskRunObject(&v1beta1.TaskRun{
+			obj: objects.NewTaskRunObjectV1Beta1(&v1beta1.TaskRun{ //nolint:staticcheck
 				TypeMeta: metav1.TypeMeta{
 					Kind: "TaskRun",
 				},
@@ -118,16 +119,16 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 							},
 						},
 						TaskSpec: &v1beta1.TaskSpec{
-							Resources: &v1beta1.TaskResources{
-								Outputs: []v1beta1.TaskResource{
+							Resources: &v1beta1.TaskResources{ //nolint:staticcheck
+								Outputs: []v1beta1.TaskResource{ //nolint:staticcheck
 									{
-										ResourceDeclaration: v1beta1.ResourceDeclaration{
+										ResourceDeclaration: v1beta1.ResourceDeclaration{ //nolint:staticcheck
 											Name: "my-image1",
 											Type: "image",
 										},
 									},
 									{
-										ResourceDeclaration: v1beta1.ResourceDeclaration{
+										ResourceDeclaration: v1beta1.ResourceDeclaration{ //nolint:staticcheck
 											Name: "my-image2",
 											Type: "image",
 										},
@@ -145,7 +146,7 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 		},
 		{
 			name: "resource and result",
-			obj: objects.NewTaskRunObject(&v1beta1.TaskRun{
+			obj: objects.NewTaskRunObjectV1Beta1(&v1beta1.TaskRun{ //nolint:staticcheck
 				TypeMeta: metav1.TypeMeta{
 					Kind: "TaskRun",
 				},
@@ -166,11 +167,11 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 						TaskRunResults: []v1beta1.TaskRunResult{
 							{
 								Name:  "IMAGE_URL",
-								Value: *v1beta1.NewArrayOrString("gcr.io/foo/bat"),
+								Value: *v1beta1.NewStructuredValues("gcr.io/foo/bat"),
 							},
 							{
 								Name:  "IMAGE_DIGEST",
-								Value: *v1beta1.NewArrayOrString("sha256:05f95b26ed10668b7183c1e2da98610e91372fa9f510046d4ce5812addad86b4"),
+								Value: *v1beta1.NewStructuredValues("sha256:05f95b26ed10668b7183c1e2da98610e91372fa9f510046d4ce5812addad86b4"),
 							},
 						},
 						TaskSpec: &v1beta1.TaskSpec{
@@ -182,10 +183,10 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 									Name: "IMAGE_DIGEST",
 								},
 							},
-							Resources: &v1beta1.TaskResources{
-								Outputs: []v1beta1.TaskResource{
+							Resources: &v1beta1.TaskResources{ //nolint:staticcheck
+								Outputs: []v1beta1.TaskResource{ //nolint:staticcheck
 									{
-										ResourceDeclaration: v1beta1.ResourceDeclaration{
+										ResourceDeclaration: v1beta1.ResourceDeclaration{ //nolint:staticcheck
 											Name: "my-image",
 											Type: "image",
 										},
@@ -202,7 +203,7 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 		},
 		{
 			name: "extra",
-			obj: objects.NewTaskRunObject(&v1beta1.TaskRun{
+			obj: objects.NewTaskRunObjectV1Beta1(&v1beta1.TaskRun{ //nolint:staticcheck
 				TypeMeta: metav1.TypeMeta{
 					Kind: "TaskRun",
 				},
@@ -211,11 +212,11 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 						TaskRunResults: []v1beta1.TaskRunResult{
 							{
 								Name:  "IMAGE_URL",
-								Value: *v1beta1.NewArrayOrString("foo"),
+								Value: *v1beta1.NewStructuredValues("foo"),
 							},
 							{
 								Name:  "gibberish",
-								Value: *v1beta1.NewArrayOrString("baz"),
+								Value: *v1beta1.NewStructuredValues("baz"),
 							},
 						},
 						ResourcesResult: []v1beta1.PipelineResourceResult{
@@ -241,10 +242,10 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 							},
 						},
 						TaskSpec: &v1beta1.TaskSpec{
-							Resources: &v1beta1.TaskResources{
-								Outputs: []v1beta1.TaskResource{
+							Resources: &v1beta1.TaskResources{ //nolint:staticcheck
+								Outputs: []v1beta1.TaskResource{ //nolint:staticcheck
 									{
-										ResourceDeclaration: v1beta1.ResourceDeclaration{
+										ResourceDeclaration: v1beta1.ResourceDeclaration{ //nolint:staticcheck
 											Name: "my-image",
 											Type: "image",
 										},
@@ -256,15 +257,16 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 				},
 			}),
 			want: []interface{}{createDigest(t, "gcr.io/foo/bar@sha256:05f95b26ed10668b7183c1e2da98610e91372fa9f510046d4ce5812addad86b5")},
-		}, {
+		},
+		{
 			name: "images",
-			obj: objects.NewTaskRunObject(&v1beta1.TaskRun{
-				Status: v1beta1.TaskRunStatus{
-					TaskRunStatusFields: v1beta1.TaskRunStatusFields{
-						TaskRunResults: []v1beta1.TaskRunResult{
+			obj: objects.NewTaskRunObjectV1(&v1.TaskRun{
+				Status: v1.TaskRunStatus{
+					TaskRunStatusFields: v1.TaskRunStatusFields{
+						Results: []v1.TaskRunResult{
 							{
 								Name:  "IMAGES",
-								Value: *v1beta1.NewArrayOrString(fmt.Sprintf("  \n \tgcr.io/foo/bar@%s\n,gcr.io/baz/bar@%s", digest1, digest2)),
+								Value: *v1.NewStructuredValues(fmt.Sprintf("  \n \tgcr.io/foo/bar@%s\n,gcr.io/baz/bar@%s", digest1, digest2)),
 							},
 						},
 					},
@@ -276,13 +278,13 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 			},
 		}, {
 			name: "images-newline",
-			obj: objects.NewTaskRunObject(&v1beta1.TaskRun{
-				Status: v1beta1.TaskRunStatus{
-					TaskRunStatusFields: v1beta1.TaskRunStatusFields{
-						TaskRunResults: []v1beta1.TaskRunResult{
+			obj: objects.NewTaskRunObjectV1(&v1.TaskRun{
+				Status: v1.TaskRunStatus{
+					TaskRunStatusFields: v1.TaskRunStatusFields{
+						Results: []v1.TaskRunResult{
 							{
 								Name:  "IMAGES",
-								Value: *v1beta1.NewArrayOrString(fmt.Sprintf("gcr.io/foo/bar@%s\ngcr.io/baz/bar@%s\n\n", digest1, digest2)),
+								Value: *v1.NewStructuredValues(fmt.Sprintf("gcr.io/foo/bar@%s\ngcr.io/baz/bar@%s\n\n", digest1, digest2)),
 							},
 						},
 					},
@@ -296,11 +298,22 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := logtesting.TestLogger(t)
-			oa := &OCIArtifact{
-				Logger: logger,
+			ctx := logtesting.TestContextWithLogger(t)
+			oa := &OCIArtifact{}
+			if trV1Beta1, ok := tt.obj.GetObject().(*v1beta1.TaskRun); ok { //nolint:staticcheck
+				trV1 := &v1.TaskRun{}
+				if err := trV1Beta1.ConvertTo(ctx, trV1); err == nil {
+					if trV1Beta1.Status.TaskRunStatusFields.TaskSpec != nil && trV1Beta1.Status.TaskRunStatusFields.TaskSpec.Resources != nil { //nolint:staticcheck
+						jsonData, err := json.Marshal(trV1Beta1.Status.TaskRunStatusFields.TaskSpec.Resources) //nolint:staticcheck
+						if err != nil {
+							t.Errorf("Error serializing to JSON: %v", err)
+						}
+						trV1.Annotations["tekton.dev/v1beta1-status-taskrunstatusfields-taskspec-resources"] = string(jsonData)
+					}
+					tt.obj = objects.NewTaskRunObjectV1(trV1)
+				}
 			}
-			got := oa.ExtractObjects(tt.obj)
+			got := oa.ExtractObjects(ctx, tt.obj)
 			sort.Slice(got, func(i, j int) bool {
 				a := got[i].(name.Digest)
 				b := got[j].(name.Digest)
@@ -314,31 +327,26 @@ func TestOCIArtifact_ExtractObjects(t *testing.T) {
 }
 
 func TestExtractOCIImagesFromResults(t *testing.T) {
-	tr := &v1beta1.TaskRun{
-		Status: v1beta1.TaskRunStatus{
-			TaskRunStatusFields: v1beta1.TaskRunStatusFields{
-				TaskRunResults: []v1beta1.TaskRunResult{
-					{Name: "img1_IMAGE_URL", Value: *v1beta1.NewArrayOrString("img1")},
-					{Name: "img1_IMAGE_DIGEST", Value: *v1beta1.NewArrayOrString(digest1)},
-					{Name: "img2_IMAGE_URL", Value: *v1beta1.NewArrayOrString("img2")},
-					{Name: "img2_IMAGE_DIGEST", Value: *v1beta1.NewArrayOrString(digest2)},
-					{Name: "IMAGE_URL", Value: *v1beta1.NewArrayOrString("img3")},
-					{Name: "IMAGE_DIGEST", Value: *v1beta1.NewArrayOrString(digest1)},
-					{Name: "img4_IMAGE_URL", Value: *v1beta1.NewArrayOrString("img4")},
-					{Name: "img5_IMAGE_DIGEST", Value: *v1beta1.NewArrayOrString("sha123:abc")},
-					{Name: "empty_str_IMAGE_DIGEST", Value: *v1beta1.NewArrayOrString("")},
-					{Name: "empty_str_IMAGE_URL", Value: *v1beta1.NewArrayOrString("")},
-				},
-			},
-		},
+	results := []objects.Result{
+		{Name: "img1_IMAGE_URL", Value: *v1.NewStructuredValues("img1")},
+		{Name: "img1_IMAGE_DIGEST", Value: *v1.NewStructuredValues(digest1)},
+		{Name: "img2_IMAGE_URL", Value: *v1.NewStructuredValues("img2")},
+		{Name: "img2_IMAGE_DIGEST", Value: *v1.NewStructuredValues(digest2)},
+		{Name: "IMAGE_URL", Value: *v1.NewStructuredValues("img3")},
+		{Name: "IMAGE_DIGEST", Value: *v1.NewStructuredValues(digest1)},
+		{Name: "img4_IMAGE_URL", Value: *v1.NewStructuredValues("img4")},
+		{Name: "img5_IMAGE_DIGEST", Value: *v1.NewStructuredValues("sha123:abc")},
+		{Name: "empty_str_IMAGE_DIGEST", Value: *v1.NewStructuredValues("")},
+		{Name: "empty_str_IMAGE_URL", Value: *v1.NewStructuredValues("")},
 	}
-	obj := objects.NewTaskRunObject(tr)
+
 	want := []interface{}{
 		createDigest(t, fmt.Sprintf("img1@%s", digest1)),
 		createDigest(t, fmt.Sprintf("img2@%s", digest2)),
 		createDigest(t, fmt.Sprintf("img3@%s", digest1)),
 	}
-	got := ExtractOCIImagesFromResults(obj, logtesting.TestLogger(t))
+	ctx := logtesting.TestContextWithLogger(t)
+	got := ExtractOCIImagesFromResults(ctx, results)
 	sort.Slice(got, func(i, j int) bool {
 		a := got[i].(name.Digest)
 		b := got[j].(name.Digest)
@@ -350,35 +358,36 @@ func TestExtractOCIImagesFromResults(t *testing.T) {
 }
 
 func TestExtractSignableTargetFromResults(t *testing.T) {
-	tr := &v1beta1.TaskRun{
-		Status: v1beta1.TaskRunStatus{
-			TaskRunStatusFields: v1beta1.TaskRunStatusFields{
-				TaskRunResults: []v1beta1.TaskRunResult{
-					{Name: "mvn1_ARTIFACT_URI", Value: *v1beta1.NewArrayOrString("projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/com.google.guava:guava:31.0-jre")},
-					{Name: "mvn1_ARTIFACT_DIGEST", Value: *v1beta1.NewArrayOrString(digest1)},
-					{Name: "mvn1_pom_ARTIFACT_URI", Value: *v1beta1.NewArrayOrString("com.google.guava:guava:31.0-jre.pom")},
-					{Name: "mvn1_pom_ARTIFACT_DIGEST", Value: *v1beta1.NewArrayOrString(digest2)},
-					{Name: "mvn1_src_ARTIFACT_URI", Value: *v1beta1.NewArrayOrString("com.google.guava:guava:31.0-jre-sources.jar")},
-					{Name: "mvn1_src_ARTIFACT_DIGEST", Value: *v1beta1.NewArrayOrString(digest3)},
-					{Name: "mvn2_ARTIFACT_URI", Value: *v1beta1.NewArrayOrString("projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/a.b.c:d:1.0-jre")},
-					{Name: "mvn2_ARTIFACT_DIGEST", Value: *v1beta1.NewArrayOrString(digest4)},
-					{Name: "ARTIFACT_URI", Value: *v1beta1.NewArrayOrString("projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/empty_prefix")},
-					{Name: "ARTIFACT_DIGEST", Value: *v1beta1.NewArrayOrString(digest1)},
-					{Name: "miss_target_name_ARTIFACT_DIGEST", Value: *v1beta1.NewArrayOrString(digest1)},
-					{Name: "wrong_digest_format_ARTIFACT_URI", Value: *v1beta1.NewArrayOrString("projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/wrong_digest_format")},
-					{Name: "wrong_digest_format_ARTIFACT_DIGEST", Value: *v1beta1.NewArrayOrString("abc")},
+	tr := &v1.TaskRun{
+		Status: v1.TaskRunStatus{
+			TaskRunStatusFields: v1.TaskRunStatusFields{
+				Results: []v1.TaskRunResult{
+					{Name: "mvn1_ARTIFACT_URI", Value: *v1.NewStructuredValues("projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/com.google.guava:guava:31.0-jre")},
+					{Name: "mvn1_ARTIFACT_DIGEST", Value: *v1.NewStructuredValues(digest1)},
+					{Name: "mvn1_pom_ARTIFACT_URI", Value: *v1.NewStructuredValues("com.google.guava:guava:31.0-jre.pom")},
+					{Name: "mvn1_pom_ARTIFACT_DIGEST", Value: *v1.NewStructuredValues(digest2)},
+					{Name: "mvn1_src_ARTIFACT_URI", Value: *v1.NewStructuredValues("com.google.guava:guava:31.0-jre-sources.jar")},
+					{Name: "mvn1_src_ARTIFACT_DIGEST", Value: *v1.NewStructuredValues(digest3)},
+					{Name: "mvn2_ARTIFACT_URI", Value: *v1.NewStructuredValues("projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/a.b.c:d:1.0-jre")},
+					{Name: "mvn2_ARTIFACT_DIGEST", Value: *v1.NewStructuredValues(digest4)},
+					{Name: "ARTIFACT_URI", Value: *v1.NewStructuredValues("projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/empty_prefix")},
+					{Name: "ARTIFACT_DIGEST", Value: *v1.NewStructuredValues(digest1)},
+					{Name: "miss_target_name_ARTIFACT_DIGEST", Value: *v1.NewStructuredValues(digest1)},
+					{Name: "wrong_digest_format_ARTIFACT_URI", Value: *v1.NewStructuredValues("projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/wrong_digest_format")},
+					{Name: "wrong_digest_format_ARTIFACT_DIGEST", Value: *v1.NewStructuredValues("abc")},
 				},
 			},
 		},
 	}
-	want := []*StructuredSignable{
+	want := []StructuredSignable{
 		{URI: "projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/com.google.guava:guava:31.0-jre", Digest: digest1},
 		{URI: "com.google.guava:guava:31.0-jre.pom", Digest: digest2},
 		{URI: "com.google.guava:guava:31.0-jre-sources.jar", Digest: digest3},
 		{URI: "projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/a.b.c:d:1.0-jre", Digest: digest4},
 		{URI: "projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/empty_prefix", Digest: digest1},
 	}
-	got := ExtractSignableTargetFromResults(objects.NewTaskRunObject(tr), logtesting.TestLogger(t))
+	ctx := logtesting.TestContextWithLogger(t)
+	got := ExtractSignableTargetFromResults(ctx, objects.NewTaskRunObjectV1(tr))
 	sort.Slice(got, func(i, j int) bool {
 		return got[i].URI < got[j].URI
 	})
@@ -391,13 +400,13 @@ func TestExtractSignableTargetFromResults(t *testing.T) {
 }
 
 func TestExtractStructuredTargetFromResults(t *testing.T) {
-	tr := &v1beta1.TaskRun{
-		Status: v1beta1.TaskRunStatus{
-			TaskRunStatusFields: v1beta1.TaskRunStatusFields{
-				TaskRunResults: []v1beta1.TaskRunResult{
+	tr := &v1.TaskRun{
+		Status: v1.TaskRunStatus{
+			TaskRunStatusFields: v1.TaskRunStatusFields{
+				Results: []v1.TaskRunResult{
 					{
 						Name: "mvn1_pkg" + "_" + ArtifactsOutputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
+						Value: *v1.NewObject(map[string]string{
 							"uri":           "projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/com.google.guava:guava:31.0-jre",
 							"digest":        digest1,
 							"signable_type": "",
@@ -405,7 +414,7 @@ func TestExtractStructuredTargetFromResults(t *testing.T) {
 					},
 					{
 						Name: "mvn1_pom_sha512" + "_" + ArtifactsOutputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
+						Value: *v1.NewObject(map[string]string{
 							"uri":           "com.google.guava:guava:31.0-jre.pom",
 							"digest":        digest2,
 							"signable_type": "",
@@ -413,56 +422,56 @@ func TestExtractStructuredTargetFromResults(t *testing.T) {
 					},
 					{
 						Name: "img1_input" + "_" + ArtifactsInputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
+						Value: *v1.NewObject(map[string]string{
 							"uri":    "gcr.io/foo/bar",
 							"digest": digest3,
 						}),
 					},
 					{
 						Name: "img2_input_sha1" + "_" + ArtifactsInputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
+						Value: *v1.NewObject(map[string]string{
 							"uri":    "gcr.io/foo/bar",
 							"digest": digest_sha1,
 						}),
 					},
 					{
 						Name: "img2_input_incorrect_sha1" + "_" + ArtifactsInputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
+						Value: *v1.NewObject(map[string]string{
 							"uri":    "gcr.io/foo/bar",
 							"digest": digest_incorrect_sha1,
 						}),
 					},
 					{
 						Name: "img3_input_sha384" + "_" + ArtifactsInputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
+						Value: *v1.NewObject(map[string]string{
 							"uri":    "gcr.io/foo/bar",
 							"digest": digest_sha384,
 						}),
 					},
 					{
 						Name: "img3_input_incorrect_sha384" + "_" + ArtifactsInputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
+						Value: *v1.NewObject(map[string]string{
 							"uri":    "gcr.io/foo/bar",
 							"digest": digest_incorrect_sha384,
 						}),
 					},
 					{
 						Name: "img4_input_sha512" + "_" + ArtifactsInputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
+						Value: *v1.NewObject(map[string]string{
 							"uri":    "gcr.io/foo/bar",
 							"digest": digest_sha512,
 						}),
 					},
 					{
 						Name: "img4_input_incorrect_sha512" + "_" + ArtifactsInputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
+						Value: *v1.NewObject(map[string]string{
 							"uri":    "gcr.io/foo/bar",
 							"digest": digest_incorrect_sha512,
 						}),
 					},
 					{
 						Name: "img2_input_no_digest" + "_" + ArtifactsInputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
+						Value: *v1.NewObject(map[string]string{
 							"uri":    "gcr.io/foo/foo",
 							"digest": "",
 						}),
@@ -478,7 +487,8 @@ func TestExtractStructuredTargetFromResults(t *testing.T) {
 		{URI: "gcr.io/foo/bar", Digest: digest_sha384},
 		{URI: "gcr.io/foo/bar", Digest: digest_sha512},
 	}
-	gotInputs := ExtractStructuredTargetFromResults(objects.NewTaskRunObject(tr), ArtifactsInputsResultName, logtesting.TestLogger(t))
+	ctx := logtesting.TestContextWithLogger(t)
+	gotInputs := ExtractStructuredTargetFromResults(ctx, objects.NewTaskRunObjectV1(tr).GetResults(), ArtifactsInputsResultName)
 	if diff := cmp.Diff(gotInputs, wantInputs, cmpopts.SortSlices(func(x, y *StructuredSignable) bool { return x.Digest < y.Digest })); diff != "" {
 		t.Errorf("Inputs are not as expected: %v", diff)
 	}
@@ -487,7 +497,7 @@ func TestExtractStructuredTargetFromResults(t *testing.T) {
 		{URI: "projects/test-project/locations/us-west4/repositories/test-repo/mavenArtifacts/com.google.guava:guava:31.0-jre", Digest: digest1},
 		{URI: "com.google.guava:guava:31.0-jre.pom", Digest: digest2},
 	}
-	gotOutputs := ExtractStructuredTargetFromResults(objects.NewTaskRunObject(tr), ArtifactsOutputsResultName, logtesting.TestLogger(t))
+	gotOutputs := ExtractStructuredTargetFromResults(ctx, objects.NewTaskRunObjectV1(tr).GetResults(), ArtifactsOutputsResultName)
 	opts := append(ignore, cmpopts.SortSlices(func(x, y *StructuredSignable) bool { return x.Digest < y.Digest }))
 	if diff := cmp.Diff(gotOutputs, wantOutputs, opts...); diff != "" {
 		t.Error(diff)
@@ -495,28 +505,28 @@ func TestExtractStructuredTargetFromResults(t *testing.T) {
 }
 
 func TestRetrieveMaterialsFromStructuredResults(t *testing.T) {
-	tr := &v1beta1.TaskRun{
-		Status: v1beta1.TaskRunStatus{
-			TaskRunStatusFields: v1beta1.TaskRunStatusFields{
-				TaskRunResults: []v1beta1.TaskRunResult{
+	tr := &v1.TaskRun{
+		Status: v1.TaskRunStatus{
+			TaskRunStatusFields: v1.TaskRunStatusFields{
+				Results: []v1.TaskRunResult{
 					{
 						Name: "img1_input" + "_" + ArtifactsInputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
-							"uri":    "gcr.io/foo/bar",
+						Value: *v1.NewObject(map[string]string{
+							"uri":    OCIScheme + "gcr.io/foo/bar",
 							"digest": "sha256:05f95b26ed10668b7183c1e2da98610e91372fa9f510046d4ce5812addad86b7",
 						}),
 					},
 					{
 						Name: "img2_input_no_digest" + "_" + ArtifactsInputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
-							"uri":    "gcr.io/foo/foo",
+						Value: *v1.NewObject(map[string]string{
+							"uri":    OCIScheme + "gcr.io/foo/foo",
 							"digest": "",
 						}),
 					},
 					{
 						Name: "img2_input_invalid_digest" + "_" + ArtifactsInputsResultName,
-						Value: *v1beta1.NewObject(map[string]string{
-							"uri":    "gcr.io/foo/foo",
+						Value: *v1.NewObject(map[string]string{
+							"uri":    OCIScheme + "gcr.io/foo/foo",
 							"digest": "sha:123",
 						}),
 					},
@@ -524,14 +534,14 @@ func TestRetrieveMaterialsFromStructuredResults(t *testing.T) {
 			},
 		},
 	}
-	wantMaterials := []slsa.ProvenanceMaterial{
+	wantMaterials := []common.ProvenanceMaterial{
 		{
-			URI:    "gcr.io/foo/bar",
+			URI:    OCIScheme + "gcr.io/foo/bar",
 			Digest: map[string]string{"sha256": "05f95b26ed10668b7183c1e2da98610e91372fa9f510046d4ce5812addad86b7"},
 		},
 	}
-
-	gotMaterials := RetrieveMaterialsFromStructuredResults(objects.NewTaskRunObject(tr), ArtifactsInputsResultName, logtesting.TestLogger(t))
+	ctx := logtesting.TestContextWithLogger(t)
+	gotMaterials := RetrieveMaterialsFromStructuredResults(ctx, objects.NewTaskRunObjectV1(tr).GetResults())
 
 	if diff := cmp.Diff(gotMaterials, wantMaterials, ignore...); diff != "" {
 		t.Fatalf("Materials not the same %s", diff)
@@ -551,7 +561,7 @@ func TestValidateResults(t *testing.T) {
 			categoryMarker: ArtifactsOutputsResultName,
 			obj: objects.Result{
 				Name: "valid_result-ARTIFACT_OUTPUTS",
-				Value: v1beta1.ParamValue{
+				Value: v1.ParamValue{
 					ObjectVal: map[string]string{
 						"uri":    "gcr.io/foo/bar",
 						"digest": digest3,
@@ -566,7 +576,7 @@ func TestValidateResults(t *testing.T) {
 			categoryMarker: ArtifactsOutputsResultName,
 			obj: objects.Result{
 				Name: "missing_digest-ARTIFACT_OUTPUTS",
-				Value: v1beta1.ParamValue{
+				Value: v1.ParamValue{
 					ObjectVal: map[string]string{
 						"uri": "gcr.io/foo/bar",
 					},
@@ -580,7 +590,7 @@ func TestValidateResults(t *testing.T) {
 			categoryMarker: ArtifactsOutputsResultName,
 			obj: objects.Result{
 				Name: "missing_digest-ARTIFACT_OUTPUTS",
-				Value: v1beta1.ParamValue{
+				Value: v1.ParamValue{
 					ObjectVal: map[string]string{
 						"digest": digest3,
 					},
@@ -594,7 +604,7 @@ func TestValidateResults(t *testing.T) {
 			categoryMarker: ArtifactsOutputsResultName,
 			obj: objects.Result{
 				Name: "missing_digest-ARTIFACT_OUTPUTS",
-				Value: v1beta1.ParamValue{
+				Value: v1.ParamValue{
 					ObjectVal: map[string]string{
 						"uri":    "gcr.io/foo/bar",
 						"digest": "",
@@ -609,7 +619,7 @@ func TestValidateResults(t *testing.T) {
 			categoryMarker: ArtifactsOutputsResultName,
 			obj: objects.Result{
 				Name: "missing_digest-ARTIFACTs_OUTPUTS",
-				Value: v1beta1.ParamValue{
+				Value: v1.ParamValue{
 					ObjectVal: map[string]string{
 						"uri":    "gcr.io/foo/bar",
 						"digest": digest3,
@@ -637,7 +647,167 @@ func TestValidateResults(t *testing.T) {
 	}
 }
 
+func TestExtractBuildArtifactsFromResults(t *testing.T) {
+	tests := []struct {
+		name                   string
+		results                []objects.Result
+		expectedBuildArtifacts []*StructuredSignable
+	}{
+		{
+			name: "structured result without isBuildArtifact property",
+			results: []objects.Result{
+				{
+					Name: "result-ARTIFACT_OUTPUTS",
+
+					Value: v1.ParamValue{
+						ObjectVal: map[string]string{
+							"uri":    "gcr.io/foo/bar",
+							"digest": digest1,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "structured result without expected schema",
+			results: []objects.Result{
+				{
+					Name: "bad-type-ARTIFACT_OUTPUTS",
+					Value: v1.ParamValue{
+						StringVal: "not-expected-type-value",
+					},
+				},
+				{
+					Name: "bad-url-field-ARTIFACT_OUTPUTS",
+					Value: v1.ParamValue{
+						ObjectVal: map[string]string{
+							"url":                "foo.com",
+							isBuildArtifactField: "true",
+						},
+					},
+				},
+				{
+					Name: "bad-commit-field-ARTIFACT_OUTPUTS",
+					Value: v1.ParamValue{
+						ObjectVal: map[string]string{
+							"uri":                "gcr.io/foo/bar",
+							"commit":             digest1,
+							isBuildArtifactField: "true",
+						},
+					},
+				},
+				{
+					Name: "bad-digest-value-ARTIFACT_OUTPUTS",
+					Value: v1.ParamValue{
+						ObjectVal: map[string]string{
+							"uri":                "gcr.io/foo/bar",
+							"digest":             "sha512:baddigestvalue",
+							isBuildArtifactField: "true",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "structured result without expected type-hint",
+			results: []objects.Result{
+				{
+					Name: "result-ARTIFACT_OBJ",
+					Value: v1.ParamValue{
+						ObjectVal: map[string]string{
+							"uri":                "gcr.io/foo/bar",
+							"digest":             digest1,
+							isBuildArtifactField: "true",
+						},
+					},
+				},
+				{
+					Name: "result-ARTIFACT_URI",
+					Value: v1.ParamValue{
+						StringVal: "gcr.io/foo/bar",
+					},
+				},
+				{
+					Name: "result-ARTIFACT_DIGEST",
+					Value: v1.ParamValue{
+						StringVal: digest1,
+					},
+				},
+				{
+					Name: "result-IMAGE_URL",
+					Value: v1.ParamValue{
+						StringVal: "gcr.io/foo/bar",
+					},
+				},
+				{
+					Name: "result-IMAGE_DIGEST",
+					Value: v1.ParamValue{
+						StringVal: digest1,
+					},
+				},
+				{
+					Name: "IMAGES",
+					Value: v1.ParamValue{
+						ArrayVal: []string{
+							fmt.Sprintf("img1@sha256:%v", digest1),
+							fmt.Sprintf("img2@sha256:%v", digest2),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "structured result mark as build artifact",
+			results: []objects.Result{
+				{
+					Name: "result-1-ARTIFACT_OUTPUTS",
+					Value: v1.ParamValue{
+						ObjectVal: map[string]string{
+							"uri":                "gcr.io/foo/bar",
+							"digest":             digest1,
+							isBuildArtifactField: "true",
+						},
+					},
+				},
+				{
+					Name: "result-2-ARTIFACT_OUTPUTS",
+					Value: v1.ParamValue{
+						ObjectVal: map[string]string{
+							"uri":                "gcr.io/bar/foo",
+							"digest":             digest2,
+							isBuildArtifactField: "false",
+						},
+					},
+				},
+				{
+					Name: "result-3-ARTIFACT_OUTPUTS",
+					Value: v1.ParamValue{
+						ObjectVal: map[string]string{
+							"uri":    "gcr.io/repo/test",
+							"digest": digest3,
+						},
+					},
+				},
+			},
+			expectedBuildArtifacts: []*StructuredSignable{
+				{URI: "gcr.io/foo/bar", Digest: digest1},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := logtesting.TestContextWithLogger(t)
+			gotBuildArtifacts := ExtractBuildArtifactsFromResults(ctx, test.results)
+			if diff := cmp.Diff(gotBuildArtifacts, test.expectedBuildArtifacts); diff != "" {
+				t.Fatalf("Materials not the same %s", diff)
+			}
+		})
+	}
+}
+
 func createDigest(t *testing.T, dgst string) name.Digest {
+	t.Helper()
 	result, err := name.NewDigest(dgst)
 	if err != nil {
 		t.Fatal(err)

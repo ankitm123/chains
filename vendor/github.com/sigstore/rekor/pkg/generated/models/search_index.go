@@ -41,11 +41,11 @@ type SearchIndex struct {
 	Email strfmt.Email `json:"email,omitempty"`
 
 	// hash
-	// Pattern: ^(sha256:)?[0-9a-fA-F]{64}$|^(sha1:)?[0-9a-fA-F]{40}$
+	// Pattern: ^(sha512:)?[0-9a-fA-F]{128}$|^(sha256:)?[0-9a-fA-F]{64}$|^(sha1:)?[0-9a-fA-F]{40}$
 	Hash string `json:"hash,omitempty"`
 
 	// operator
-	// Enum: [and or]
+	// Enum: ["and","or"]
 	Operator string `json:"operator,omitempty"`
 
 	// public key
@@ -95,7 +95,7 @@ func (m *SearchIndex) validateHash(formats strfmt.Registry) error {
 		return nil
 	}
 
-	if err := validate.Pattern("hash", "body", m.Hash, `^(sha256:)?[0-9a-fA-F]{64}$|^(sha1:)?[0-9a-fA-F]{40}$`); err != nil {
+	if err := validate.Pattern("hash", "body", m.Hash, `^(sha512:)?[0-9a-fA-F]{128}$|^(sha256:)?[0-9a-fA-F]{64}$|^(sha1:)?[0-9a-fA-F]{40}$`); err != nil {
 		return err
 	}
 
@@ -180,6 +180,11 @@ func (m *SearchIndex) ContextValidate(ctx context.Context, formats strfmt.Regist
 func (m *SearchIndex) contextValidatePublicKey(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.PublicKey != nil {
+
+		if swag.IsZero(m.PublicKey) { // not required
+			return nil
+		}
+
 		if err := m.PublicKey.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("publicKey")
@@ -222,7 +227,7 @@ type SearchIndexPublicKey struct {
 
 	// format
 	// Required: true
-	// Enum: [pgp x509 minisign ssh tuf]
+	// Enum: ["pgp","x509","minisign","ssh","tuf"]
 	Format *string `json:"format"`
 
 	// url

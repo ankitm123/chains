@@ -22,6 +22,7 @@ package entries
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -102,12 +103,19 @@ func (o *GetLogEntryByIndexOK) IsCode(code int) bool {
 	return code == 200
 }
 
+// Code gets the status code for the get log entry by index o k response
+func (o *GetLogEntryByIndexOK) Code() int {
+	return 200
+}
+
 func (o *GetLogEntryByIndexOK) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndexOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndexOK %s", 200, payload)
 }
 
 func (o *GetLogEntryByIndexOK) String() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndexOK  %+v", 200, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndexOK %s", 200, payload)
 }
 
 func (o *GetLogEntryByIndexOK) GetPayload() models.LogEntry {
@@ -162,12 +170,17 @@ func (o *GetLogEntryByIndexNotFound) IsCode(code int) bool {
 	return code == 404
 }
 
+// Code gets the status code for the get log entry by index not found response
+func (o *GetLogEntryByIndexNotFound) Code() int {
+	return 404
+}
+
 func (o *GetLogEntryByIndexNotFound) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndexNotFound ", 404)
+	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndexNotFound", 404)
 }
 
 func (o *GetLogEntryByIndexNotFound) String() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndexNotFound ", 404)
+	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndexNotFound", 404)
 }
 
 func (o *GetLogEntryByIndexNotFound) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
@@ -191,11 +204,6 @@ type GetLogEntryByIndexDefault struct {
 	_statusCode int
 
 	Payload *models.Error
-}
-
-// Code gets the status code for the get log entry by index default response
-func (o *GetLogEntryByIndexDefault) Code() int {
-	return o._statusCode
 }
 
 // IsSuccess returns true when this get log entry by index default response has a 2xx status code
@@ -223,12 +231,19 @@ func (o *GetLogEntryByIndexDefault) IsCode(code int) bool {
 	return o._statusCode == code
 }
 
+// Code gets the status code for the get log entry by index default response
+func (o *GetLogEntryByIndexDefault) Code() int {
+	return o._statusCode
+}
+
 func (o *GetLogEntryByIndexDefault) Error() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndex default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndex default %s", o._statusCode, payload)
 }
 
 func (o *GetLogEntryByIndexDefault) String() string {
-	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndex default  %+v", o._statusCode, o.Payload)
+	payload, _ := json.Marshal(o.Payload)
+	return fmt.Sprintf("[GET /api/v1/log/entries][%d] getLogEntryByIndex default %s", o._statusCode, payload)
 }
 
 func (o *GetLogEntryByIndexDefault) GetPayload() *models.Error {
